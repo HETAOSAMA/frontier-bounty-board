@@ -27,6 +27,3 @@ builder-scaffold/deployments/
 .DS_Store
 
 .ruff_cache/
-
-# Upstream dependency (do not vendor)
-world-contracts/

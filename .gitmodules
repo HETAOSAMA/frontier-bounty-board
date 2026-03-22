@@ -1,0 +1,3 @@
+[submodule "world-contracts"]
+	path = world-contracts
+	url = https://github.com/evefrontier/world-contracts.git
