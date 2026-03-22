@@ -1,0 +1,17 @@
+# Change the following to the preferred smart assembly
+# If defined, this will take priority over values passed via URL query param
+VITE_OBJECT_ID=
+
+# World package id
+VITE_EVE_WORLD_PACKAGE_ID="0xf115375112eab1dcc1bb4af81a37d47ca7e95c2eb990cefa1f12f82d689e9543"
+
+VITE_SUI_GRAPHQL_ENDPOINT="https://graphql.testnet.sui.io/graphql"
+
+# Shared bounty config (same keys as ts-scripts, with VITE_ prefix for dapp)
+VITE_BUILDER_PACKAGE_ID=
+VITE_EXTENSION_CONFIG_ID=
+VITE_BOUNTY_COIN_TYPE=
+VITE_BOUNTY_ID=
+
+# Local attestor base URL (defaults to http://127.0.0.1:8787)
+VITE_ATTESTOR_URL=

@@ -1,0 +1,18 @@
+[package]
+name = "smart_gate_extension"
+edition = "2024"              # edition = "legacy" to use legacy (pre-2024) Move
+# license = ""           # e.g., "MIT", "GPL", "Apache 2.0"
+# authors = ["..."]      # e.g., ["Joe Smith (joesmith@noemail.com)", "John Snow (johnsnow@noemail.com)"]
+
+[dependencies]
+# 使用上游 world-contracts 作为依赖（不在本仓库 vendoring 其源码），避免把上游贡献者带入本仓库的提交历史。
+# 固定到稳定 tag，避免 main 分支变更导致脚手架工程无法构建。
+world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "v0.0.18" }
+
+# Read more about the package management system options:
+# https://docs.sui.io/guides/developer/sui-101/move-package-management
+[environments]
+ef-localhost = "4c78adac"
+testnet_internal = "4c78adac"
+testnet_utopia = "4c78adac"
+testnet_stillness = "4c78adac"

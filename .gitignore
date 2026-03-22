@@ -1,0 +1,32 @@
+# Secrets
+*.key
+*.pem
+*.p12
+*.keystore
+
+# Local env files (never commit)
+builder-scaffold/.env
+builder-scaffold/dapps/.env
+
+# Dependencies
+**/node_modules/
+
+# Build outputs
+**/dist/
+**/.vite/
+
+# efctl / localnet artifacts
+builder-scaffold/deployments/
+.tmp/
+
+# Workspace caches
+.pnpm-store/
+.sisyphus/
+
+# OS
+.DS_Store
+
+.ruff_cache/
+
+# Upstream dependency (do not vendor)
+world-contracts/

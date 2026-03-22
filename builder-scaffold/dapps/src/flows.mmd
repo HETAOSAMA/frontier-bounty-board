@@ -1,0 +1,58 @@
+flowchart TD
+  %% 赏金 dApp 端到端流程图（MVP）
+  %%
+  %% 说明：
+  %% - 前端：React/Vite（仅 Eve Vault 钱包）
+  %% - 链上：Move 合约（corpse_gate_bounty）
+  %% - 链下：attestor（验证 killmail 并签名 claim payload）
+
+  subgraph FE[前端 dApp（builder-scaffold/dapps/src）]
+    FE_APP[App.tsx\n页面导航 + 钱包连接按钮]
+    FE_BOUNTIES[BountiesPage.tsx\n赏金大厅（最近 N 条）]
+    FE_CREATE[CreateBountyPage.tsx\n发布赏金]
+    FE_MINE[MyBountiesPage.tsx\n我发布的]
+    FE_HUNTS[MyHuntsPage.tsx\n我的接取 / 领取]
+
+    FE_TX[lib/bounty/tx.ts\n组装交易 create/accept/cancel/claim]
+    FE_GQL[lib/bounty/graphql.ts\nGraphQL: getObjectsByType 读取 bounty 对象]
+    FE_ATTEST[lib/attestor/client.ts\nHTTP: /candidates 拉取候选 + 签名]
+  end
+
+  subgraph CHAIN[链上（Move 合约）]
+    MOVE_CFG[config.move\nExtensionConfig + AdminCap]
+    MOVE_BOUNTY[corpse_gate_bounty.move\nBounty 状态机 + 事件 + 验签]
+    MOVE_EVENTS[BountyCreatedEvent / Accepted / Cancelled / Claimed]
+  end
+
+  subgraph ATTESTOR[链下（attestor 服务）]
+    ATTEST_SRV[ts-scripts/attestor/server.ts\n/candidates + /attestations/claim]
+    ATTEST_KILL[查询 KillmailCreatedEvent\n解析角色→钱包地址\n校验时间窗 + 签名]
+  end
+
+  subgraph WORLD[world 合约（击杀事件）]
+    KM_EVENT[KillmailCreatedEvent\n(world::killmail)]
+  end
+
+  %% 读取列表（大厅/我的）
+  FE_APP --> FE_GQL --> MOVE_BOUNTY
+  FE_GQL --> FE_BOUNTIES
+  FE_GQL --> FE_MINE
+  FE_GQL --> FE_HUNTS
+
+  %% 发布者：发布赏金
+  FE_CREATE --> FE_TX --> MOVE_BOUNTY
+  MOVE_BOUNTY --> MOVE_EVENTS
+
+  %% 发布者：取消赏金
+  FE_MINE --> FE_TX --> MOVE_BOUNTY
+
+  %% 猎人：接取赏金
+  FE_BOUNTIES --> FE_TX --> MOVE_BOUNTY
+
+  %% 游戏：击杀产生 killmail 事件
+  WORLD --> KM_EVENT
+
+  %% 猎人：领取赏金（依赖 attestor 签名）
+  FE_HUNTS --> FE_ATTEST --> ATTEST_SRV --> ATTEST_KILL
+  ATTEST_KILL --> KM_EVENT
+  FE_HUNTS --> FE_TX --> MOVE_BOUNTY

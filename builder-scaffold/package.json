@@ -1,0 +1,41 @@
+{
+    "name": "builder-scaffold",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@10.17.0",
+    "pnpm": {
+        "onlyBuiltDependencies": [
+            "esbuild"
+        ]
+    },
+    "scripts": {
+        "fmt": "prettier --write \"move-contracts/**/*.move\"",
+        "fmt:ts": "prettier --write \"ts-scripts/**/*.ts\"",
+        "fmt:check": "prettier --check \"move-contracts/**/*.move\" \"ts-scripts/**/*.ts\"",
+        "lint": "sh scripts/lint-move.sh",
+        "configure-rules": "tsx ts-scripts/smart_gate_extension/configure-rules.ts",
+        "create-bounty": "tsx ts-scripts/smart_gate_extension/create-bounty.ts",
+        "accept-bounty": "tsx ts-scripts/smart_gate_extension/accept-bounty.ts",
+        "cancel-bounty": "tsx ts-scripts/smart_gate_extension/cancel-bounty.ts",
+        "claim-bounty": "tsx ts-scripts/smart_gate_extension/claim-bounty.ts",
+        "attestor:start": "tsx ts-scripts/attestor/server.ts",
+        "attestor": "tsx ts-scripts/attestor/server.ts",
+        "bounty:create": "tsx ts-scripts/smart_gate_extension/create-bounty.ts",
+        "bounty:accept": "tsx ts-scripts/smart_gate_extension/accept-bounty.ts",
+        "bounty:cancel": "tsx ts-scripts/smart_gate_extension/cancel-bounty.ts",
+        "bounty:claim": "tsx ts-scripts/smart_gate_extension/claim-bounty.ts",
+        "mock-killmail": "tsx ts-scripts/world/mock-killmail.ts"
+    },
+    "dependencies": {
+        "@mysten/sui": "^2.0.0",
+        "@noble/hashes": "^1.8.0",
+        "dotenv": "^17.2.3"
+    },
+    "devDependencies": {
+        "@mysten/prettier-plugin-move": "^0.3.5",
+        "@types/node": "^24.10.4",
+        "prettier": "^3.3.2",
+        "tsx": "^4.21.0",
+        "typescript": "^5.9.3"
+    }
+}
