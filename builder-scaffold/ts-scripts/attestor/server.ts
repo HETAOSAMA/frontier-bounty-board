@@ -295,7 +295,7 @@ function serializeClaimPayload(payload: ClaimAttestationPayload): Uint8Array {
     }).toBytes();
 }
 
-// 复用 `world::sig_verify` 的意图前缀与 blake2b256 摘要规则，输出 `[flag][sig][pubkey]` 十六进制签名。
+// 复用链上 `world::sig_verify` 的意图前缀与 blake2b256 摘要规则，输出 `[flag][sig][pubkey]` 十六进制签名。
 async function signClaimPayload(
     payload: ClaimAttestationPayload,
     keypair: ReturnType<typeof keypairFromPrivateKey>

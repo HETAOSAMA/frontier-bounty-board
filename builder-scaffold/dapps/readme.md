@@ -70,7 +70,7 @@ VITE_ATTESTOR_URL=http://127.0.0.1:8787
 ### 配置示例：testnet（Utopia 等世界）
 
 ```env
-VITE_EVE_WORLD_PACKAGE_ID="0x<官方 world package id>"
+VITE_EVE_WORLD_PACKAGE_ID="0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75"  # testnet_utopia
 VITE_SUI_GRAPHQL_ENDPOINT="https://graphql.testnet.sui.io/graphql"
 
 VITE_BUILDER_PACKAGE_ID=0x<你发布 smart_gate_extension 的 package id>

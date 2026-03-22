@@ -52,7 +52,7 @@ function App() {
               我的接取
             </button>
             <button onClick={() => setTab("mine")} disabled={tab === "mine"}>
-              我发布的
+              我发布的赏金
             </button>
           </Flex>
 

@@ -188,8 +188,21 @@ export function enrichBountyConfigError(error: unknown): unknown {
 }
 
 export function getEnvConfig(): EnvConfig {
-    const network = (process.env.SUI_NETWORK as Network) || "localnet";
+    const rawNetwork = (process.env.SUI_NETWORK || process.env.NETWORK || "localnet").trim();
+    const isNetwork = (value: string): value is Network =>
+        value === "localnet" || value === "testnet" || value === "devnet" || value === "mainnet";
+    if (!isNetwork(rawNetwork)) {
+        throw new Error(`Invalid network '${rawNetwork}'. Use localnet|testnet|devnet|mainnet.`);
+    }
+    const network = rawNetwork;
+
     const rpcUrl = process.env.SUI_RPC_URL || DEFAULT_RPC_URLS[network];
+    if (network !== "localnet" && /(127\.0\.0\.1|localhost)/.test(rpcUrl)) {
+        throw new Error(
+            `SUI_RPC_URL (${rpcUrl}) looks like a local node but network is ${network}. ` +
+                `Unset SUI_RPC_URL or set it to a ${network} fullnode URL.`
+        );
+    }
     const packageId = getDefaultWorldPackageId(network);
     if (!packageId) {
         throw new Error("WORLD_PACKAGE_ID is required");

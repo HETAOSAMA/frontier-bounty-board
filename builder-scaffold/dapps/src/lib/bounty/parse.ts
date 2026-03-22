@@ -15,6 +15,16 @@ function toBigIntOrUndefined(value: unknown): bigint | undefined {
   return undefined;
 }
 
+function parseLifecycle(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (!isRecord(value)) return undefined;
+  const atVariant = value["@variant"];
+  if (typeof atVariant === "string") return atVariant;
+  const variant = value["variant"];
+  if (typeof variant === "string") return variant;
+  return undefined;
+}
+
 function normalizeAddressList(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.filter((v): v is string => typeof v === "string" && v.trim().startsWith("0x"));
@@ -35,10 +45,18 @@ function unwrapMoveFields(value: unknown): unknown {
   return value;
 }
 
-function parseBalanceValue(value: unknown): bigint | undefined {
+function parseEscrowAmount(value: unknown): bigint | undefined {
   const unwrapped = unwrapMoveFields(value);
-  if (!isRecord(unwrapped)) return undefined;
-  return toBigIntOrUndefined(unwrapped.value);
+  const direct = toBigIntOrUndefined(unwrapped);
+  if (direct !== undefined) return direct;
+
+  if (isRecord(unwrapped)) {
+    const maybeValue = (unwrapped as Record<string, unknown>)["value"];
+    const parsed = toBigIntOrUndefined(maybeValue);
+    if (parsed !== undefined) return parsed;
+  }
+
+  return undefined;
 }
 
 export function parseBountyMoveObjectJson(bountyId: string, json: unknown): BountyView {
@@ -57,14 +75,14 @@ export function parseBountyMoveObjectJson(bountyId: string, json: unknown): Boun
     "";
 
   const lifecycle =
-    toStringOrUndefined(json["lifecycle"]) ||
-    toStringOrUndefined(json["status"]) ||
-    toStringOrUndefined(json["state"]);
+    parseLifecycle(json["lifecycle"]) ||
+    parseLifecycle(json["status"]) ||
+    parseLifecycle(json["state"]);
 
   const createdAtMs = toBigIntOrUndefined(json["created_at"] ?? json["createdAt"]);
   const expiresAtMs = toBigIntOrUndefined(json["expires_at"] ?? json["expiresAt"]);
   const acceptedHunters = normalizeAddressList(json["accepted_hunters"] ?? json["acceptedHunters"]);
-  const escrowAmount = parseBalanceValue(json["escrow_balance"] ?? json["escrowBalance"]);
+  const escrowAmount = parseEscrowAmount(json["escrow_balance"] ?? json["escrowBalance"]);
 
   return {
     id: bountyId,

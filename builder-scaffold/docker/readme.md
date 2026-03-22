@@ -130,11 +130,11 @@ docker system prune -a --volumes
    `rm Move.lock && sui move build -e testnet`
 
 2. **"Unpublished dependencies: World"?**  
-如需从零开始部署 world-contracts 并生成测试资源，请参考 `efctl` 官方说明；本仓库默认用 `efctl env up` 生成 world/localnet。
-
-   ```bash
-   sui client test-publish --build-env testnet --pubfile-path ../../deployments/localnet/Pub.localnet.toml
-   ```
+   这表示 `sui client publish` 无法把 `World` 依赖解析成目标网络上的已发布地址。
+   处理方式：
+   - 确认 `smart_gate_extension/Move.toml` 依赖的 `world-contracts` 版本包含 `contracts/world/Published.toml`；
+   - 发布时使用正确的 build env（例如 `-e testnet_utopia`）；
+   - 或作为最后手段使用 `--with-unpublished-dependencies`（会把依赖一起发布，不推荐）。
 
 
 

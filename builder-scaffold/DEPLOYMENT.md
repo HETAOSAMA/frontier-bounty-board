@@ -34,7 +34,7 @@
 | 变量 | 写入位置 | 谁使用 | 从哪里获取 |
 |---|---|---|---|
 | `SUI_NETWORK` / `SUI_RPC_URL` | `.env` | TS 脚本、attestor | localnet 用 `http://127.0.0.1:9000`；testnet 用 `https://fullnode.testnet.sui.io:443` |
-| `WORLD_PACKAGE_ID` | `.env` + `dapps/.env` | attestor / 前端 | `efctl env up` 输出表格；或 `deployments/<network>/extracted-object-ids.json` |
+| `WORLD_PACKAGE_ID` | `.env` + `dapps/.env` | attestor / 前端 | localnet：`efctl env up` 输出表格或 `deployments/<network>/extracted-object-ids.json`；testnet(Utopia)：`0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75` |
 | `WORLD_OBJECT_REGISTRY_ID` | `.env` | attestor、mock-killmail | 同上（Object Registry） |
 | `TENANT` | `.env` | attestor、mock-killmail | localnet 默认 `dev`；线上从官方世界配置获取 |
 | `BUILDER_PACKAGE_ID` | `.env` + `dapps/.env` | 脚本、前端 | `efctl env extension publish ...` 输出；或 `sui client publish` 输出 |
@@ -186,8 +186,12 @@ efctl env extension publish builder-scaffold/move-contracts/smart_gate_extension
 > sui client new-env --alias testnet --rpc https://fullnode.testnet.sui.io:443
 > sui client switch --env testnet
 > cd builder-scaffold/move-contracts/smart_gate_extension
-> sui client publish
+> # Utopia 世界在 testnet 上发布，建议用对应 build env
+> sui client publish -e testnet_utopia --skip-dependency-verification
 > ```
+
+> 如果你看到 `Unpublished dependencies: World`：请确认 `smart_gate_extension/Move.toml` 依赖的 `world-contracts`
+> 版本包含 `contracts/world/Published.toml`（官方已发布地址元数据）。
 
 拿到并记录：
 
@@ -219,17 +223,33 @@ ATTESTOR_PORT=8787
 
 # 可选：不填则用默认 fullnode
 SUI_RPC_URL=https://fullnode.testnet.sui.io:443
+
+# 可选：兼容部分脚本使用的变量名（等价于 NETWORK）
+SUI_NETWORK=testnet
 ```
 
 启动后，用新网络的 `EXTENSION_CONFIG_ID` 再跑一次配置：
 
 ```bash
 cd builder-scaffold
-NETWORK=testnet npm run configure-rules
+SUI_RPC_URL=https://fullnode.testnet.sui.io:443 NETWORK=testnet pnpm run configure-rules
 ```
+
+> `configure-rules` 需要使用发布合约时生成的 `AdminCap`，因此执行该脚本的 `ADMIN_PRIVATE_KEY` 必须对应
+> **拥有 AdminCap 的地址**（通常就是 `sui client active-address` 的那把钥匙）。
+>
+> 你可以用以下命令从本机 Sui keystore 导出这把钥匙（输出为 `suiprivkey...`），再写入 `.env`：
+>
+> ```bash
+> sui client active-address
+> sui keytool export --key-identity 0x<active-address>
+> ```
 
 > `WORLD_PACKAGE_ID` / `WORLD_OBJECT_REGISTRY_ID` / `TENANT` 这三项来自“游戏世界”的公开配置（官方提供）。
 > 只要它们指向 Utopia（testnet）世界，attestor 就能直接读取游戏内产生的 `KillmailCreatedEvent`。
+
+> Utopia(testnet) 的 `WORLD_PACKAGE_ID`（官方 world-contracts 发布记录）为：
+> `0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75`
 
 ### 2.3 部署前端（静态站）
 

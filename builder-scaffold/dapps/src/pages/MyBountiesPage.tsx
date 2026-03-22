@@ -60,17 +60,28 @@ export function MyBountiesPage(props: {
       <Box mt="3">
         {(bountiesQuery.data ?? []).map((b) => {
           const accepted = b.acceptedHunters?.length ?? 0;
-          const canCancel = accepted === 0 && (b.lifecycle === "Open" || b.lifecycle === "Accepted" || !b.lifecycle);
+          const lifecycle = b.lifecycle ?? "";
+          const canCancel = accepted === 0 && lifecycle === "Open";
+
+          const buttonText = canCancel
+            ? isCancelling
+              ? "取消中..."
+              : "取消"
+            : lifecycle === "Cancelled"
+              ? "已取消"
+              : lifecycle === "Claimed"
+                ? "已领取"
+                : "不可取消";
           return (
             <Box key={b.id} p="3" mb="2" style={{ border: "1px solid #e2e2e2", borderRadius: 8 }}>
               <Flex justify="between" align="center" gap="3">
                 <Box>
                   <Text size="2">BountyId: {b.id}</Text>
                   <div>目标：{b.target}</div>
-                  <div>状态：{b.lifecycle ?? "-"}，接取人数：{accepted}</div>
+                  <div>状态：{lifecycle || "-"}，接取人数：{accepted}</div>
                 </Box>
                 <button disabled={isCancelling || !canCancel} onClick={() => onCancel(b.id)}>
-                  {canCancel ? (isCancelling ? "取消中..." : "取消") : "不可取消"}
+                  {buttonText}
                 </button>
               </Flex>
             </Box>

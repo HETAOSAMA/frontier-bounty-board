@@ -2,7 +2,8 @@ import { Box, Flex, Heading, Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { fetchRecentBounties } from "../lib/bounty/graphql";
 import { useCurrentAccount, useDAppKit } from "@mysten/dapp-kit-react";
-import { buildAcceptBountyTx } from "../lib/bounty/tx";
+import { useState } from "react";
+import { buildAcceptBountyTx, buildCancelBountyTx } from "../lib/bounty/tx";
 import { formatMistToSui } from "../lib/sui/amount";
 
 export function BountiesPage(props: {
@@ -13,6 +14,7 @@ export function BountiesPage(props: {
   const account = useCurrentAccount();
   const dAppKit = useDAppKit();
   const limit = props.limit ?? 30;
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const bountiesQuery = useQuery({
     queryKey: ["bounties.recent", props.builderPackageId, props.coinType, limit],
@@ -35,6 +37,23 @@ export function BountiesPage(props: {
     await bountiesQuery.refetch();
   }
 
+  async function onCancel(bountyId: string) {
+    if (!account?.address) return;
+    setCancellingId(bountyId);
+    try {
+      const tx = buildCancelBountyTx({
+        builderPackageId: props.builderPackageId,
+        coinType: props.coinType,
+        bountyId,
+        refundTo: account.address,
+      });
+      await dAppKit.signAndExecuteTransaction({ transaction: tx });
+      await bountiesQuery.refetch();
+    } finally {
+      setCancellingId((cur) => (cur === bountyId ? null : cur));
+    }
+  }
+
   return (
     <Box>
       <Heading size="4">赏金大厅（最近 {limit} 条）</Heading>
@@ -45,10 +64,16 @@ export function BountiesPage(props: {
         {(bountiesQuery.data ?? []).map((view) => {
           const acceptedCount = view.acceptedHunters?.length ?? 0;
           const lifecycle = view.lifecycle ?? "";
+          const isCreator = !!account?.address && view.creator === account.address;
           const alreadyAccepted = account?.address
             ? view.acceptedHunters.includes(account.address)
             : false;
-          const canAccept = !!account?.address && lifecycle !== "Claimed" && lifecycle !== "Cancelled" && !alreadyAccepted;
+          const canAccept =
+            !!account?.address &&
+            lifecycle === "Open" &&
+            !alreadyAccepted &&
+            !isCreator;
+          const canCancel = isCreator && lifecycle === "Open" && acceptedCount === 0;
           return (
             <Box
               key={view.id}
@@ -63,9 +88,17 @@ export function BountiesPage(props: {
                   <div>金额：{view.escrowAmount ? `${formatMistToSui(view.escrowAmount)} SUI` : "-"}</div>
                   <div>状态：{lifecycle || "-"}，接取人数：{acceptedCount}</div>
                 </Box>
-                <button disabled={!canAccept} onClick={() => onAccept(view.id)}>
-                  {alreadyAccepted ? "已接取" : "接取"}
-                </button>
+                <Flex gap="2" align="center">
+                  <button disabled={!canAccept} onClick={() => onAccept(view.id)}>
+                    {alreadyAccepted ? "已接取" : "接取"}
+                  </button>
+                  <button
+                    disabled={!canCancel || cancellingId === view.id}
+                    onClick={() => onCancel(view.id)}
+                  >
+                    {canCancel ? (cancellingId === view.id ? "取消中..." : "取消") : "不可取消"}
+                  </button>
+                </Flex>
               </Flex>
             </Box>
           );
