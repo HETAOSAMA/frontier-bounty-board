@@ -37,7 +37,7 @@
 │  ├─ ts-scripts/world/                             # localnet 工具（mock-killmail 生成击杀事件）
 │  ├─ dapps/                                        # 前端工程（React/Vite）
 │  └─ deployments/                                  # efctl env up 的部署产物（gitignore）
-└─ (external) world-contracts                       # 上游依赖： https://github.com/evefrontier/world-contracts
+└─ (external) world-contracts                       # 上游依赖： [evefrontier/world-contracts](https://github.com/evefrontier/world-contracts)
 ```
 
 ## 快速开始（localnet）
