@@ -16,6 +16,8 @@
 
 ## 重要约定
 
-- `target` 使用 **目标角色的钱包地址**（Sui address）。
+- `target` 使用 **目标角色 ID（tenant + item_id）**。
+- `corpse_gate_bounty::CharacterId` 是本包自定义的最小结构（不用 world 的 TenantItemId），因为上游 `world::in_game_id::create_key` 是 `public(package)`，外部包无法直接构造。
+- 前端/脚本通过 `corpse_gate_bounty::character_id(item_id, tenant)` 在交易里构造目标角色 ID。
 - `created_at` / `expires_at` / `kill_timestamp` 统一使用 **毫秒时间戳**。
   - 链上 killmail 事件是秒级时间戳，需由 attestor 统一转换为毫秒后签名。

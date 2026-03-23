@@ -62,7 +62,8 @@ export function MyHuntsPage(props: {
         payoutTo: props.accountAddress,
         killmailId: BigInt(latest.killmail_id),
         killer: latest.killer,
-        victim: latest.victim,
+        victimItemId: BigInt(latest.attestation.payload.victim_item_id),
+        victimTenant: latest.attestation.payload.victim_tenant,
         killTimestampMs: BigInt(latest.kill_timestamp_ms),
         isShipLoss: latest.attestation.payload.is_ship_loss === "true",
         signatureBytes: bytes,
@@ -90,11 +91,13 @@ export function MyHuntsPage(props: {
         {(bountiesQuery.data ?? []).map((b) => (
           <Box key={b.id} p="3" mb="2" style={{ border: "1px solid #e2e2e2", borderRadius: 8 }}>
             <Flex justify="between" align="center" gap="3">
-              <Box>
-                <Text size="2">BountyId: {b.id}</Text>
-                <div>目标：{b.target}</div>
-                <div>状态：{b.lifecycle ?? "-"}</div>
-              </Box>
+                <Box>
+                  <Text size="2">BountyId: {b.id}</Text>
+                <div>
+                  目标：{b.target ? `${b.target.tenant}:${b.target.itemId.toString()}` : "-"}
+                </div>
+                  <div>状态：{b.lifecycle ?? "-"}</div>
+                </Box>
               <button disabled={isClaiming} onClick={() => onClaim(b.id)}>
                 {isClaiming ? "领取中..." : "领取"}
               </button>

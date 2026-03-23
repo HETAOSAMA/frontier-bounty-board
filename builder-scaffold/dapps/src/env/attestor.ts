@@ -19,7 +19,8 @@ export type AttestationClaimPayload = {
   bounty_id: string;
   killmail_id: string;
   killer: string;
-  victim: string;
+  victim_item_id: string;
+  victim_tenant: string;
   kill_timestamp_ms: string;
 };
 

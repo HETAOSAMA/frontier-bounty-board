@@ -26,7 +26,7 @@ flowchart TD
 
   subgraph ATTESTOR[链下（attestor 服务）]
     ATTEST_SRV[ts-scripts/attestor/server.ts\n/candidates + /attestations/claim]
-    ATTEST_KILL[查询 KillmailCreatedEvent\n解析角色→钱包地址\n校验时间窗 + 签名]
+    ATTEST_KILL[查询 KillmailCreatedEvent\n校验 victim_id 命中 bounty.target\n用 PlayerProfile 校验 killer 钱包\n校验时间窗 + 签名]
   end
 
   subgraph WORLD[world 合约（击杀事件）]

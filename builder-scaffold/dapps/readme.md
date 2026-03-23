@@ -8,6 +8,8 @@
 - 展示赏金大厅 / 我的接取 / 我发布的
 - 发布/接取/取消/领取（领取需要调用 attestor 获取签名）
 
+> 目标（bounty.target）是 **角色 ID（tenant + item_id）**，发布时通过角色名搜索下拉框选择。
+
 - [React](https://react.dev/) as the UI framework
 - [TypeScript](https://www.typescriptlang.org/) for type checking
 - [Vite](https://vitejs.dev/) for build tooling

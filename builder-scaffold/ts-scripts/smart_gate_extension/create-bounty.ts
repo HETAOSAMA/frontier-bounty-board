@@ -4,7 +4,6 @@ import { CLOCK_OBJECT_ID } from "../utils/constants";
 import {
     enrichBountyConfigError,
     extractEvent,
-    requireAddressEnv,
     requireBountyCoinTypeFromEnv,
     requirePositiveU64Env,
     getEnvConfig,
@@ -18,7 +17,7 @@ import { MODULE } from "./modules";
 type BountyCreatedEvent = {
     bounty_id: string;
     creator: string;
-    target: string;
+    target: { item_id: string; tenant: string };
     created_at: string;
     expires_at: string;
     escrow_amount: string;
@@ -29,7 +28,8 @@ function buildCreateBountyTx(
     sender: string,
     builderPackageId: string,
     coinType: string,
-    target: string,
+    targetItemId: bigint,
+    targetTenant: string,
     escrowAmount: bigint,
     expiresAtMs: bigint
 ): Transaction {
@@ -43,15 +43,15 @@ function buildCreateBountyTx(
         arguments: [escrowCoin],
     });
 
+    const [target] = tx.moveCall({
+        target: `${builderPackageId}::${MODULE.CORPSE_GATE_BOUNTY}::character_id`,
+        arguments: [tx.pure.u64(targetItemId), tx.pure.string(targetTenant)],
+    });
+
     tx.moveCall({
         target: `${builderPackageId}::${MODULE.CORPSE_GATE_BOUNTY}::create_bounty`,
         typeArguments: [coinType],
-        arguments: [
-            tx.pure.address(target),
-            tx.pure.u64(expiresAtMs),
-            escrowBalance,
-            tx.object(CLOCK_OBJECT_ID),
-        ],
+        arguments: [target, tx.pure.u64(expiresAtMs), escrowBalance, tx.object(CLOCK_OBJECT_ID)],
     });
 
     return tx;
@@ -76,7 +76,15 @@ async function main() {
     console.log("============= Create Bounty ==============\n");
 
     try {
-        const target = requireAddressEnv("BOUNTY_TARGET_ADDRESS");
+        const targetItemId = requirePositiveU64Env("BOUNTY_TARGET_ITEM_ID");
+        const targetTenant = (
+            process.env.BOUNTY_TARGET_TENANT ||
+            process.env.TENANT ||
+            "dev"
+        ).trim();
+        if (!targetTenant) {
+            throw new Error("BOUNTY_TARGET_TENANT (or TENANT) is required");
+        }
         const escrowAmount = requirePositiveU64Env("BOUNTY_ESCROW_AMOUNT");
         const expiresAtMs = BigInt(process.env.BOUNTY_EXPIRES_AT_MS || "0");
         const coinType = requireBountyCoinTypeFromEnv();
@@ -92,7 +100,8 @@ async function main() {
             address,
             builderPackageId,
             coinType,
-            target,
+            targetItemId,
+            targetTenant,
             escrowAmount,
             expiresAtMs
         );

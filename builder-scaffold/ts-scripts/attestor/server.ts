@@ -9,15 +9,20 @@ type ClaimAttestationPayload = {
     bounty_id: string;
     killmail_id: bigint;
     killer: string;
-    victim: string;
+    victim: CharacterId;
     kill_timestamp: bigint;
     is_ship_loss: boolean;
+};
+
+type CharacterId = {
+    item_id: bigint;
+    tenant: string;
 };
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 type BountyState = {
-    target: string;
+    target: CharacterId;
     createdAt: bigint;
     expiresAt: bigint;
     acceptedHunters: string[];
@@ -35,8 +40,8 @@ type TenantItemId = {
 };
 
 type KillmailState = {
-    killer: string;
-    victim: string;
+    killerId: TenantItemId;
+    victimId: TenantItemId;
     killTimestampMs: bigint;
     isShipLoss: boolean;
 };
@@ -84,11 +89,16 @@ const ObjectIdBcs = bcs.struct("ID", {
     bytes: AddressBcs,
 });
 
+const CharacterIdBcs = bcs.struct("CharacterId", {
+    item_id: bcs.u64(),
+    tenant: bcs.string(),
+});
+
 const ClaimAttestationPayloadBcs = bcs.struct("ClaimAttestationPayload", {
     bounty_id: ObjectIdBcs,
     killmail_id: bcs.u64(),
     killer: AddressBcs,
-    victim: AddressBcs,
+    victim: CharacterIdBcs,
     kill_timestamp: bcs.u64(),
     is_ship_loss: bcs.bool(),
 });
@@ -112,6 +122,7 @@ function printHelp(): void {
     console.log("Routes:");
     console.log("  GET  /health");
     console.log("  GET  /candidates?bounty_id=<id>&limit=<n>");
+    console.log("  GET  /characters/search?name=<substring>&limit=<n>");
     console.log("  POST /attestations/claim");
 }
 
@@ -173,6 +184,11 @@ async function routeRequest(
     const method = request.method || "GET";
     const url = new URL(request.url || "/", "http://127.0.0.1");
 
+    if (method === "OPTIONS") {
+        writeEmpty(response, 204);
+        return;
+    }
+
     if (method === "GET" && url.pathname === "/health") {
         writeJson(response, 200, {
             ok: true,
@@ -201,12 +217,39 @@ async function routeRequest(
         return;
     }
 
+    if (method === "GET" && url.pathname === "/characters/search") {
+        const worldConfig = requireWorldVerificationConfig(context.worldConfig);
+        const name = (url.searchParams.get("name") || "").trim();
+        const limit = parseSearchLimit(url.searchParams.get("limit"));
+        const tenantOverride = (url.searchParams.get("tenant") || "").trim();
+
+        const candidates = await searchCharactersByName({
+            client: context.client,
+            worldConfig: {
+                ...worldConfig,
+                tenant: tenantOverride || worldConfig.tenant,
+            },
+            name,
+            limit,
+        });
+
+        writeJson(response, 200, { candidates });
+        return;
+    }
+
     if (method === "POST" && url.pathname === "/attestations/claim") {
         const rawBody = await readJsonBody(request);
         const payload = parseClaimPayload(rawBody);
         const worldConfig = requireWorldVerificationConfig(context.worldConfig);
         const bounty = await fetchBountyState(context.client, payload.bounty_id);
         const killmail = await fetchKillmailState(context.client, payload.killmail_id, worldConfig);
+
+        await validateKillerWalletMatchesKillmail(
+            context.client,
+            payload.killer,
+            killmail.killerId,
+            worldConfig
+        );
 
         payload.is_ship_loss = killmail.isShipLoss;
         if (!payload.is_ship_loss) {
@@ -228,12 +271,154 @@ async function routeRequest(
     if (
         (url.pathname === "/health" && method !== "GET") ||
         (url.pathname === "/candidates" && method !== "GET") ||
+        (url.pathname === "/characters/search" && method !== "GET") ||
         (url.pathname === "/attestations/claim" && method !== "POST")
     ) {
         throw new HttpError(405, `Method ${method} not allowed for ${url.pathname}`);
     }
 
     throw new HttpError(404, `Route ${method} ${url.pathname} not found`);
+}
+
+type CharacterSearchCandidate = {
+    name: string;
+    tenant: string;
+    item_id: string;
+    character_object_id: string;
+    character_wallet: string;
+};
+
+const DEFAULT_CHARACTER_SEARCH_LIMIT = 10;
+const MAX_CHARACTER_SEARCH_LIMIT = 50;
+const DEFAULT_CHARACTER_SEARCH_MAX_SCAN = 5000;
+
+function parseSearchLimit(value: string | null): number {
+    if (value === null || value.trim() === "") {
+        return DEFAULT_CHARACTER_SEARCH_LIMIT;
+    }
+    if (!/^\d+$/.test(value.trim())) {
+        throw new HttpError(
+            400,
+            `limit must be an integer between 1 and ${MAX_CHARACTER_SEARCH_LIMIT}`
+        );
+    }
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_CHARACTER_SEARCH_LIMIT) {
+        throw new HttpError(
+            400,
+            `limit must be an integer between 1 and ${MAX_CHARACTER_SEARCH_LIMIT}`
+        );
+    }
+    return parsed;
+}
+
+function resolveCharacterSearchMaxScan(): number {
+    const raw = (
+        process.env.CHARACTER_SEARCH_MAX_SCAN || String(DEFAULT_CHARACTER_SEARCH_MAX_SCAN)
+    ).trim();
+    if (!/^\d+$/.test(raw)) {
+        throw new HttpError(500, "CHARACTER_SEARCH_MAX_SCAN must be a positive integer");
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+        throw new HttpError(500, "CHARACTER_SEARCH_MAX_SCAN must be a positive integer");
+    }
+    return parsed;
+}
+
+async function searchCharactersByName(input: {
+    client: ReturnType<typeof createClient>;
+    worldConfig: WorldVerificationConfig;
+    name: string;
+    limit: number;
+}): Promise<CharacterSearchCandidate[]> {
+    const query = input.name.trim().toLowerCase();
+    const maxScan = resolveCharacterSearchMaxScan();
+    const moveEventType = `${input.worldConfig.packageId}::metadata::MetadataChangedEvent`;
+    const expectedCharacterType = `${input.worldConfig.packageId}::character::Character`;
+
+    const out: CharacterSearchCandidate[] = [];
+    const seen = new Set<string>();
+
+    let cursor: EventCursor = null;
+    let hasNextPage = true;
+    let scanned = 0;
+
+    while (hasNextPage && scanned < maxScan && out.length < input.limit) {
+        const page = await input.client.queryEvents({
+            query: { MoveEventType: moveEventType },
+            cursor,
+            limit: EVENT_QUERY_PAGE_SIZE,
+            order: "descending",
+        });
+
+        for (const event of page.data) {
+            scanned += 1;
+            if (scanned > maxScan) {
+                break;
+            }
+            if (!isRecord(event.parsedJson)) {
+                continue;
+            }
+
+            const parsed = event.parsedJson;
+            const key = parseTenantItemIdField("metadata.assembly_key", parsed.assembly_key);
+            if (key.tenant !== input.worldConfig.tenant) {
+                continue;
+            }
+            const nameValue = typeof parsed.name === "string" ? parsed.name.trim() : "";
+            if (!nameValue) {
+                continue;
+            }
+
+            if (query && !nameValue.toLowerCase().includes(query)) {
+                continue;
+            }
+
+            const dedupeKey = `${key.tenant}:${key.itemId.toString()}`;
+            if (seen.has(dedupeKey)) {
+                continue;
+            }
+
+            const objectId = deriveCharacterObjectId(key, input.worldConfig);
+            const obj = await input.client.getObject({
+                id: objectId,
+                options: { showContent: true, showType: true },
+            });
+            const actualType = obj.data?.type;
+            if (actualType !== expectedCharacterType) {
+                continue;
+            }
+
+            const content = obj.data?.content;
+            if (!content || content.dataType !== "moveObject") {
+                continue;
+            }
+            const fields = unwrapMoveFields(`character ${objectId}`, content.fields);
+            const wallet = parseAddressField(
+                "character.character_address",
+                fields.character_address
+            );
+
+            seen.add(dedupeKey);
+            out.push({
+                name: nameValue,
+                tenant: key.tenant,
+                item_id: key.itemId.toString(),
+                character_object_id: objectId,
+                character_wallet: wallet,
+            });
+
+            if (out.length >= input.limit) {
+                break;
+            }
+        }
+
+        cursor = page.nextCursor;
+        hasNextPage = page.hasNextPage;
+    }
+
+    return out;
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
@@ -272,12 +457,20 @@ function parseClaimPayload(input: unknown): ClaimAttestationPayload {
     }
 
     const killTimestampSource = source.kill_timestamp_ms ?? source.kill_timestamp;
+    const victimSource = source.victim ?? source.victim_id;
+    const victimItemIdSource = source.victim_item_id ?? source.victimItemId;
+    const victimTenantSource = source.victim_tenant ?? source.victimTenant;
 
     return {
         bounty_id: parseObjectIdField("bounty_id", source.bounty_id),
         killmail_id: parseU64Field("killmail_id", source.killmail_id),
         killer: parseAddressField("killer", source.killer),
-        victim: parseAddressField("victim", source.victim),
+        victim: parseCharacterIdField(
+            "victim",
+            victimSource,
+            victimItemIdSource,
+            victimTenantSource
+        ),
         kill_timestamp: parseU64Field("kill_timestamp", killTimestampSource),
         is_ship_loss: parseBooleanLike("is_ship_loss", source.is_ship_loss, false),
     };
@@ -338,7 +531,7 @@ async function fetchBountyState(
     const bountyFields = fields as Record<string, unknown>;
 
     return {
-        target: parseAddressField("bounty.target", bountyFields.target),
+        target: parseCharacterIdFromMoveFields("bounty.target", bountyFields.target),
         createdAt: parseU64Field("bounty.created_at", bountyFields.created_at),
         expiresAt: parseU64Field("bounty.expires_at", bountyFields.expires_at),
         acceptedHunters: parseAddressVector(
@@ -350,7 +543,7 @@ async function fetchBountyState(
 
 // 签名前必须重放链上守卫条件：victim 命中 target、击杀时间晚于 created_at、killer 已接单。
 function validateBountyClaim(payload: ClaimAttestationPayload, bounty: BountyState): void {
-    if (payload.victim !== bounty.target) {
+    if (!characterIdEquals(payload.victim, bounty.target)) {
         throw new HttpError(400, "Claim victim does not match bounty target");
     }
     if (payload.kill_timestamp <= bounty.createdAt) {
@@ -362,6 +555,10 @@ function validateBountyClaim(payload: ClaimAttestationPayload, bounty: BountySta
     if (!bounty.acceptedHunters.includes(payload.killer)) {
         throw new HttpError(400, "Killer is not in bounty accepted_hunters");
     }
+}
+
+function characterIdEquals(left: CharacterId, right: CharacterId): boolean {
+    return left.item_id === right.item_id && left.tenant === right.tenant;
 }
 
 // 启用链上 killmail 校验前，先确保环境里提供了世界包和对象注册表配置。
@@ -385,14 +582,9 @@ async function fetchKillmailState(
 ): Promise<KillmailState> {
     const event = await findKillmailCreatedEvent(client, killmailId, worldConfig);
 
-    const [killer, victim] = await Promise.all([
-        fetchCharacterWalletAddress(client, event.killerId, worldConfig),
-        fetchCharacterWalletAddress(client, event.victimId, worldConfig),
-    ]);
-
     return {
-        killer,
-        victim,
+        killerId: event.killerId,
+        victimId: event.victimId,
         killTimestampMs: event.killTimestampMs,
         isShipLoss: event.isShipLoss,
     };
@@ -492,45 +684,6 @@ function deriveCharacterObjectId(
     return deriveObjectID(worldConfig.objectRegistryId, tenantItemIdType, serializedKey);
 }
 
-// 通过派生出的 Character 对象读取 `character_address`，并兼容 Move object fields 的嵌套展开形式。
-async function fetchCharacterWalletAddress(
-    client: ReturnType<typeof createClient>,
-    characterId: TenantItemId,
-    worldConfig: WorldVerificationConfig
-): Promise<string> {
-    const objectId = deriveCharacterObjectId(characterId, worldConfig);
-    const result = await client.getObject({
-        id: objectId,
-        options: { showContent: true, showType: true },
-    });
-
-    const content = result.data?.content;
-    if (!content || content.dataType !== "moveObject") {
-        throw new HttpError(
-            404,
-            `Character object ${objectId} was not found or has no Move content`
-        );
-    }
-
-    const fields = unwrapMoveFields(`character ${objectId}`, content.fields);
-    return parseAddressField("character.character_address", fields.character_address);
-}
-
-async function tryFetchCharacterWalletAddress(
-    client: ReturnType<typeof createClient>,
-    characterId: TenantItemId,
-    worldConfig: WorldVerificationConfig
-): Promise<string | null> {
-    try {
-        return await fetchCharacterWalletAddress(client, characterId, worldConfig);
-    } catch (e) {
-        if (e instanceof HttpError && e.statusCode === 404) {
-            return null;
-        }
-        throw e;
-    }
-}
-
 // 将链上 killmail 时间统一折算成毫秒：小于阈值按秒处理，否则视为已经是毫秒。
 function normalizeKillTimestampMs(timestamp: bigint): bigint {
     return timestamp < MILLIS_THRESHOLD ? timestamp * 1000n : timestamp;
@@ -545,16 +698,123 @@ function parseTenantItemIdField(label: string, value: unknown): TenantItemId {
     };
 }
 
+function parseCharacterIdFromMoveFields(label: string, value: unknown): CharacterId {
+    const fields = unwrapMoveFields(label, value);
+    return {
+        item_id: parseU64Field(`${label}.item_id`, fields.item_id),
+        tenant: parseStringLike(`${label}.tenant`, fields.tenant),
+    };
+}
+
+function parseCharacterIdField(
+    label: string,
+    value: unknown,
+    itemId: unknown,
+    tenant: unknown
+): CharacterId {
+    if (isRecord(value)) {
+        const fields = unwrapMoveFields(label, value);
+        return {
+            item_id: parseU64Field(`${label}.item_id`, fields.item_id),
+            tenant: parseStringLike(`${label}.tenant`, fields.tenant),
+        };
+    }
+    return {
+        item_id: parseU64Field(`${label}.item_id`, itemId),
+        tenant: parseStringLike(`${label}.tenant`, tenant),
+    };
+}
+
+async function validateKillerWalletMatchesKillmail(
+    client: ReturnType<typeof createClient>,
+    killerWallet: string,
+    killerId: TenantItemId,
+    worldConfig: WorldVerificationConfig
+): Promise<void> {
+    const keys = await fetchWalletCharacterKeys(client, killerWallet, worldConfig);
+    const matches = keys.some((k) => k.itemId === killerId.itemId && k.tenant === killerId.tenant);
+    if (!matches) {
+        throw new HttpError(400, "Killer wallet does not match killmail killer character");
+    }
+}
+
+async function resolveAcceptedHunterWalletForKillerId(input: {
+    client: ReturnType<typeof createClient>;
+    acceptedHunters: string[];
+    killerId: TenantItemId;
+    worldConfig: WorldVerificationConfig;
+}): Promise<string | null> {
+    const cache = new Map<string, TenantItemId[]>();
+
+    for (const wallet of input.acceptedHunters) {
+        const keys =
+            cache.get(wallet) ||
+            (await fetchWalletCharacterKeys(input.client, wallet, input.worldConfig));
+        cache.set(wallet, keys);
+        if (
+            keys.some(
+                (k) => k.itemId === input.killerId.itemId && k.tenant === input.killerId.tenant
+            )
+        ) {
+            return wallet;
+        }
+    }
+    return null;
+}
+
+async function fetchWalletCharacterKeys(
+    client: ReturnType<typeof createClient>,
+    wallet: string,
+    worldConfig: WorldVerificationConfig
+): Promise<TenantItemId[]> {
+    const playerProfileType = `${worldConfig.packageId}::character::PlayerProfile`;
+    const owned = await client.getOwnedObjects({
+        owner: wallet,
+        filter: { StructType: playerProfileType },
+        options: { showContent: true, showType: true },
+        limit: 10,
+    });
+
+    const characterIds: string[] = [];
+    for (const entry of owned.data) {
+        const content = entry.data?.content;
+        if (!content || content.dataType !== "moveObject") {
+            continue;
+        }
+        const fields = unwrapMoveFields("player_profile", content.fields);
+        const characterId = parseObjectIdField("player_profile.character_id", fields.character_id);
+        characterIds.push(characterId);
+    }
+
+    if (characterIds.length === 0) {
+        return [];
+    }
+
+    const keys: TenantItemId[] = [];
+    for (const characterObjectId of characterIds) {
+        const obj = await client.getObject({
+            id: characterObjectId,
+            options: { showContent: true, showType: true },
+        });
+        const content = obj.data?.content;
+        if (!content || content.dataType !== "moveObject") {
+            continue;
+        }
+        const fields = unwrapMoveFields(`character ${characterObjectId}`, content.fields);
+        const key = parseTenantItemIdField("character.key", fields.key);
+        keys.push(key);
+    }
+
+    return keys;
+}
+
 // 对比请求 payload 与链上 killmail 的归一化结果，任何一项不一致都拒绝签名。
 function validateKillmailClaim(payload: ClaimAttestationPayload, killmail: KillmailState): void {
     if (!killmail.isShipLoss) {
         throw new HttpError(400, "Killmail loss type must be SHIP");
     }
-    if (payload.killer !== killmail.killer) {
-        throw new HttpError(400, "Claim killer does not match killmail killer wallet");
-    }
-    if (payload.victim !== killmail.victim) {
-        throw new HttpError(400, "Claim victim does not match killmail victim wallet");
+    if (!characterIdEquals(payload.victim, toCharacterId(killmail.victimId))) {
+        throw new HttpError(400, "Claim victim does not match killmail victim character");
     }
     if (payload.kill_timestamp !== killmail.killTimestampMs) {
         throw new HttpError(400, "Claim kill_timestamp does not match killmail timestamp");
@@ -562,6 +822,10 @@ function validateKillmailClaim(payload: ClaimAttestationPayload, killmail: Killm
     if (payload.is_ship_loss !== killmail.isShipLoss) {
         throw new HttpError(400, "Claim is_ship_loss does not match killmail loss type");
     }
+}
+
+function toCharacterId(value: TenantItemId): CharacterId {
+    return { item_id: value.itemId, tenant: value.tenant };
 }
 
 // `/candidates` 只是基于最近事件做 best-effort 自动发现；结果仍按与 `/attestations/claim` 相同的 payload/signature 规则生成，保证前端拿到的签名可直接复用。
@@ -597,19 +861,18 @@ async function listClaimableKillmailCandidates(input: {
 
     const candidates = await Promise.all(
         recentEvents.map(async (event) => {
-            const [killer, victim] = await Promise.all([
-                tryFetchCharacterWalletAddress(input.client, event.killerId, input.worldConfig),
-                tryFetchCharacterWalletAddress(input.client, event.victimId, input.worldConfig),
-            ]);
-
-            if (!killer || !victim) {
+            const victim = toCharacterId(event.victimId);
+            if (!characterIdEquals(victim, input.bounty.target)) {
                 return null;
             }
 
-            if (victim !== input.bounty.target) {
-                return null;
-            }
-            if (!input.bounty.acceptedHunters.includes(killer)) {
+            const killer = await resolveAcceptedHunterWalletForKillerId({
+                client: input.client,
+                acceptedHunters: input.bounty.acceptedHunters,
+                killerId: event.killerId,
+                worldConfig: input.worldConfig,
+            });
+            if (!killer) {
                 return null;
             }
             if (event.killTimestampMs <= input.bounty.createdAt) {
@@ -882,7 +1145,8 @@ function toResponsePayload(payload: ClaimAttestationPayload): Record<string, str
         bounty_id: payload.bounty_id,
         killmail_id: payload.killmail_id.toString(),
         killer: payload.killer,
-        victim: payload.victim,
+        victim_item_id: payload.victim.item_id.toString(),
+        victim_tenant: payload.victim.tenant,
         kill_timestamp: payload.kill_timestamp.toString(),
         is_ship_loss: payload.is_ship_loss ? "true" : "false",
     };
@@ -893,8 +1157,22 @@ function writeJson(
     statusCode: number,
     body: Record<string, JsonValue>
 ): void {
-    response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
+    response.writeHead(statusCode, {
+        "content-type": "application/json; charset=utf-8",
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET,POST,OPTIONS",
+        "access-control-allow-headers": "content-type",
+    });
     response.end(JSON.stringify(body));
+}
+
+function writeEmpty(response: ServerResponse, statusCode: number): void {
+    response.writeHead(statusCode, {
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET,POST,OPTIONS",
+        "access-control-allow-headers": "content-type",
+    });
+    response.end();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

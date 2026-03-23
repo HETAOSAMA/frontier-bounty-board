@@ -3,7 +3,10 @@ import { getAttestorUrl } from "../../env/attestor";
 export type KillCandidate = {
   killmail_id: string;
   killer: string;
-  victim: string;
+  victim: {
+    item_id: string;
+    tenant: string;
+  };
   kill_timestamp_ms: string;
   attestation: {
     key_id: string;
@@ -11,12 +14,21 @@ export type KillCandidate = {
       bounty_id: string;
       killmail_id: string;
       killer: string;
-      victim: string;
+      victim_item_id: string;
+      victim_tenant: string;
       kill_timestamp: string;
       is_ship_loss: string;
     };
     signature: string;
   };
+};
+
+export type CharacterCandidate = {
+  name: string;
+  tenant: string;
+  item_id: string;
+  character_object_id: string;
+  character_wallet: string;
 };
 
 type CandidatesResult =
@@ -71,8 +83,49 @@ export async function fetchKillCandidates(args: {
     return { ok: false, error: text || `HTTP ${status}`, status };
   }
 
-  if (Array.isArray(json)) {
-    return { ok: true, value: json as KillCandidate[] };
+  if (isRecord(json) && Array.isArray(json["candidates"])) {
+    return { ok: true, value: json["candidates"] as KillCandidate[] };
+  }
+
+  return { ok: false, error: "Unexpected response from attestor", status };
+}
+
+type CharacterSearchResult =
+  | { ok: true; value: CharacterCandidate[] }
+  | { ok: false; error: string; status?: number };
+
+export async function searchCharacters(args: {
+  name: string;
+  limit?: number;
+}): Promise<CharacterSearchResult> {
+  const base = getAttestorUrl().replace(/\/$/, "");
+  const url = new URL(`${base}/characters/search`);
+  url.searchParams.set("name", args.name);
+  if (args.limit != null) {
+    url.searchParams.set("limit", String(args.limit));
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), { method: "GET" });
+  } catch (e) {
+    return { ok: false, error: String((e as Error | undefined)?.message ?? e) };
+  }
+
+  const status = res.status;
+  const text = await res.text();
+  const json = safeJsonParse(text);
+
+  if (!res.ok) {
+    if (isRecord(json)) {
+      const err = toStringOrUndefined(json["error"]) || toStringOrUndefined(json["message"]);
+      if (err) return { ok: false, error: err, status };
+    }
+    return { ok: false, error: text || `HTTP ${status}`, status };
+  }
+
+  if (isRecord(json) && Array.isArray(json["candidates"])) {
+    return { ok: true, value: json["candidates"] as CharacterCandidate[] };
   }
 
   return { ok: false, error: "Unexpected response from attestor", status };

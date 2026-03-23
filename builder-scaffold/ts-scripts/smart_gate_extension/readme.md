@@ -23,7 +23,8 @@ pnpm configure-rules
 2) 发布赏金
 
 ```bash
-BOUNTY_TARGET_ADDRESS=0x... \
+BOUNTY_TARGET_ITEM_ID=900000001 \
+BOUNTY_TARGET_TENANT=utopia \
 BOUNTY_ESCROW_AMOUNT=1000000000 \
 BOUNTY_EXPIRES_AT_MS=0 \
 pnpm create-bounty

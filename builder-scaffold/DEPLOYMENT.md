@@ -59,6 +59,9 @@
 | `ADMIN_CAP_ID`（可选但推荐） | `.env` | `configure-rules` 用的 `AdminCap` object id（避免脚本搜索 owned objects） | `sui client publish` 输出里的 `AdminCap` object id |
 | `BOUNTY_COIN_TYPE`（脚本用） | `.env` | TS 脚本创建/接取/领取时的 coin type | 一般为 `0x2::sui::SUI` |
 
+> 当前版本 bounty 目标使用角色 ID（`tenant + item_id`），而不是目标钱包地址。
+> 目标角色可通过 attestor 的 `/characters/search`（按名字搜索）获得候选。
+
 #### C) 私钥（只给本机脚本/服务端；不要进前端、不要提交 git）
 
 | 变量 | 写到哪里 | 用途 | 从哪里获取 |
@@ -180,7 +183,7 @@ VITE_ATTESTOR_URL=http://127.0.0.1:8787
 
 ### 1.6 本地闭环（推荐按这个顺序跑一遍）
 
-1) 发布赏金（会打印 `BountyCreatedEvent.bounty_id`）：
+1) 发布赏金（目标为角色 tenant+item_id；会打印 `BountyCreatedEvent.bounty_id`）：
 
 ```bash
 cd builder-scaffold
@@ -209,7 +212,7 @@ KILLER_CHARACTER_ID=811880 VICTIM_CHARACTER_ID=900000001 LOSS_TYPE=1 npm run moc
 
 ```bash
 curl "http://127.0.0.1:8787/candidates?bounty_id=$BOUNTY_ID&limit=10"
-# 把 candidates[0].attestation.payload + signature 填到 claim-bounty 脚本环境变量
+# 把 candidates[0].attestation.payload(victim_item_id/victim_tenant 等) + signature 填到 claim-bounty 脚本环境变量
 ```
 
 ---

@@ -3,7 +3,7 @@
 本目录是“赏金看板”前端（React + Vite）。只做三件事：
 
 1. **连接 Eve Vault 钱包**（Sui Wallet Standard）
-2. **展示赏金列表/我的接取/我发布的**（MVP：通过链上事件拉取最近 N 条 + 读取 bounty 对象补状态）
+2. **展示赏金列表/我的接取/我发布的**（MVP：通过 Sui GraphQL 按类型读取最近 N 条 bounty shared objects）
 3. **发起链上交易**（发布/接取/取消/领取）以及调用 **attestor** 获取领取签名
 
 ## 入口文件
@@ -25,6 +25,14 @@
 - `VITE_EXTENSION_CONFIG_ID`：ExtensionConfig 对象 id（存 trusted_attestor）
 - `VITE_BOUNTY_COIN_TYPE`：目前固定为 SUI（`0x2::sui::SUI`）
 - `VITE_ATTESTOR_URL`：attestor 服务地址
+
+## 目标角色选择（角色名 -> tenant+item_id）
+
+发布赏金时，目标不再是“钱包地址”，而是 **角色 ID（tenant + item_id）**。
+
+- 页面：`pages/CreateBountyPage.tsx`
+- 角色搜索：调用 attestor `GET /characters/search?name=<substring>&limit=<n>`
+- 选择结果：把候选的 `tenant/item_id` 作为 bounty.target 写入链上
 
 ## 流程图
 

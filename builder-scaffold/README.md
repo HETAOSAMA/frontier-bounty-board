@@ -83,6 +83,11 @@ npm --prefix dapps run dev
 
 本赏金模块是一个**多猎人状态机**：多个猎人可以接取同一条赏金，但只有满足规则的最终击杀者可以领取。
 
+当前版本的关键点：
+
+- bounty.target 表示 **目标角色（tenant + item_id）**，不要求目标钱包参与
+- hunter 仍然用 **钱包地址** 接单/领取（用 `tx sender` 绑定，防止第三方盗领）
+
 ### 组件
 
 - On-chain: `move-contracts/smart_gate_extension/sources/corpse_gate_bounty.move`
@@ -140,8 +145,52 @@ sequenceDiagram
   Attestor-->>DApp: {key_id,payload,signature}
 
   DApp->>Sui: claim_bounty(attestation)
-  Note over DApp,Sui: Only the final valid killer can claim\nRules: killer must be in accepted_hunters; victim must match target; kill_timestamp > created_at; signature verified
-```
+  Note over DApp,Sui: Only the final valid killer can claim\nRules: killer must be in accepted_hunters; victim_id must match target character; kill_timestamp > created_at; signature verified
+  ```
+
+## 功能实现说明（How it works）
+
+### 1) 通过角色名获取角色 ID（tenant + item_id）
+
+- 前端：`dapps/src/pages/CreateBountyPage.tsx` 调用 attestor 的 `GET /characters/search`（输入关键词，下拉候选，多条可选）
+- attestor：`ts-scripts/attestor/server.ts` 扫描 `world::metadata::MetadataChangedEvent`，取 `assembly_key{item_id,tenant}` + `name`
+  - 为避免把非 Character 的 metadata（装配件等）当成角色：会按 `WORLD_OBJECT_REGISTRY_ID` 派生对象 ID，并校验对象类型是 `world::character::Character`
+
+对应脚本（便于直接看真实链数据）：
+- `ts-scripts/world/resolve-character-name.ts`
+
+### 2) 读取赏金列表（大厅/我的接取/我发布的）
+
+- 前端通过 Sui GraphQL `objects(filter: { type: ... })` 查询：
+  - 代码：`dapps/src/lib/bounty/graphql.ts`
+  - 类型字符串：`${BUILDER_PACKAGE_ID}::corpse_gate_bounty::Bounty<${COIN_TYPE}>`
+  - GraphQL 单页最大 50，前端会自动分页拉取
+- Move object JSON 解析：`dapps/src/lib/bounty/parse.ts`
+  - `lifecycle` 兼容 `{"@variant":"Open"}` 这种 GraphQL 形状
+  - `target` 解析为 `{ item_id, tenant }`
+
+### 3) 如何校验“确实是接取该赏金的猎人完成击杀”
+
+分两层校验：attestor（出具证明） + 链上合约（强约束）。
+
+**Attestor 校验（签名前）**：`ts-scripts/attestor/server.ts`
+
+- 读取 bounty 对象：拿到 `target(tenant+item_id)`、`created_at/expires_at`、`accepted_hunters`（钱包地址列表）
+- 扫描 `KillmailCreatedEvent`：筛选 tenant、并要求 `killmail.victim_id == bounty.target`
+- 只允许 `loss_type == SHIP`
+- 校验 killer 身份（防冒领）：
+  - killmail 里 killer 是 `killer_id`（角色 TenantItemId）
+  - 用 `world::character::PlayerProfile` 做 `钱包 -> 角色 key` 映射
+  - 从 `accepted_hunters` 中找到“其角色 key 匹配 killmail.killer_id”的那个钱包，作为 payload.killer
+- 生成 `ClaimAttestationPayload` 并用 `ATTESTOR_PRIVATE_KEY` 签名
+
+**链上最终强约束**：`move-contracts/smart_gate_extension/sources/corpse_gate_bounty.move`
+
+- `tx sender == killer`（第三方拿到 attestation 也无法盗领）
+- `killer ∈ accepted_hunters`
+- `victim == target character`
+- 时间窗口 + `is_ship_loss == true`
+- `sig_verify::verify_signature(payload, signature, trusted_attestor)`
 
 ### 常用命令
 

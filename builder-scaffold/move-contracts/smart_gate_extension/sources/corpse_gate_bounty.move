@@ -9,15 +9,24 @@
 ///   created_at < kill_timestamp <= expires_at（expires_at=0 表示永久）
 ///
 /// 重要说明：
-/// - 这里的“目标”使用 **目标角色的钱包地址**（Sui address）来表示。
+/// - 这里的“目标”使用 **目标角色 ID（TenantItemId）** 来表示（更贴近游戏语义，不要求目标钱包参与）。
 /// - 这里的 kill_timestamp 约定为 **毫秒时间戳**（与 clock::timestamp_ms 一致）。
 ///   attestor 负责把链上的 killmail 秒级时间转换为毫秒并签名。
 module smart_gate_extension::corpse_gate_bounty;
 
 use smart_gate_extension::config::{Self, AdminCap, ExtensionConfig};
-use std::bcs;
+use std::{bcs, string::String};
 use sui::{balance::{Self, Balance}, clock::Clock, event};
 use world::sig_verify;
+
+public struct CharacterId has copy, drop, store {
+    item_id: u64,
+    tenant: String,
+}
+
+public fun character_id(item_id: u64, tenant: String): CharacterId {
+    CharacterId { item_id, tenant }
+}
 
 // === Errors ===
 #[error(code = 0)]
@@ -62,7 +71,7 @@ public enum BountyLifecycle has copy, drop, store {
 public struct Bounty<phantom CoinType> has key, store {
     id: UID,
     creator: address,
-    target: address,
+    target: CharacterId,
     lifecycle: BountyLifecycle,
     // 创建时间只在创建时写入，后续状态流转不可修改。
     created_at: u64,
@@ -76,7 +85,7 @@ public struct Bounty<phantom CoinType> has key, store {
 public struct BountyCreatedEvent has copy, drop {
     bounty_id: ID,
     creator: address,
-    target: address,
+    target: CharacterId,
     created_at: u64,
     expires_at: u64,
     escrow_amount: u64,
@@ -107,7 +116,7 @@ public struct ClaimAttestationPayload has copy, drop, store {
     bounty_id: ID,
     killmail_id: u64,
     killer: address,
-    victim: address,
+    victim: CharacterId,
     kill_timestamp: u64,
     // 是否为“船损失”(SHIP)。
     // 我们在链上不直接读取 killmail（成本高且耦合 world），而是让 attestor
@@ -126,7 +135,7 @@ public struct BountyConfigKey has copy, drop, store {}
 // === Bounty Core Functions ===
 /// 创建悬赏并锁定托管余额，初始化为 Open 状态，随后共享对象。
 public fun create_bounty<CoinType>(
-    target: address,
+    target: CharacterId,
     // 过期时间（毫秒）。=0 表示永久。
     expires_at: u64,
     escrow_balance: Balance<CoinType>,
@@ -247,7 +256,7 @@ public fun claim_bounty<CoinType>(
     bounty: &mut Bounty<CoinType>,
     killmail_id: u64,
     killer: address,
-    victim: address,
+    victim: CharacterId,
     kill_timestamp: u64,
     is_ship_loss: bool,
     claim_signature: vector<u8>,
@@ -263,8 +272,11 @@ public fun claim_bounty<CoinType>(
     assert!(hunter == killer, EInvalidClaimant);
     // 必须先接单才能领取，确保 payout 只能由被授权猎人拿走。
     assert!(contains_hunter(&bounty.accepted_hunters, killer), EKillerNotAccepted);
-    // 受害者必须命中悬赏目标。
-    assert!(victim == bounty.target, EInvalidClaimTarget);
+    // 受害者必须命中悬赏目标（按 tenant + item_id 判断）。
+    assert!(
+        victim.item_id == bounty.target.item_id && victim.tenant == bounty.target.tenant,
+        EInvalidClaimTarget,
+    );
     // 击杀时间必须严格晚于悬赏创建时间。
     assert!(kill_timestamp > bounty.created_at, EInvalidKillTimestamp);
     // 击杀必须发生在悬赏有效期内：expires_at=0 表示永久。
@@ -347,7 +359,7 @@ public fun is_bounty_claimed<CoinType>(bounty: &Bounty<CoinType>): bool {
     bounty.lifecycle == BountyLifecycle::Claimed
 }
 
-public fun bounty_target<CoinType>(bounty: &Bounty<CoinType>): address {
+public fun bounty_target<CoinType>(bounty: &Bounty<CoinType>): CharacterId {
     bounty.target
 }
 

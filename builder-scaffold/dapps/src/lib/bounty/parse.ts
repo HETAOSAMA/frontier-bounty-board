@@ -1,4 +1,4 @@
-import type { BountyView } from "./types";
+import type { BountyView, CharacterIdView } from "./types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -45,6 +45,15 @@ function unwrapMoveFields(value: unknown): unknown {
   return value;
 }
 
+function parseCharacterId(value: unknown): CharacterIdView | undefined {
+  const unwrapped = unwrapMoveFields(value);
+  if (!isRecord(unwrapped)) return undefined;
+  const itemId = toBigIntOrUndefined(unwrapped["item_id"]);
+  const tenant = toStringOrUndefined(unwrapped["tenant"]);
+  if (itemId === undefined || !tenant) return undefined;
+  return { itemId, tenant };
+}
+
 function parseEscrowAmount(value: unknown): bigint | undefined {
   const unwrapped = unwrapMoveFields(value);
   const direct = toBigIntOrUndefined(unwrapped);
@@ -61,7 +70,7 @@ function parseEscrowAmount(value: unknown): bigint | undefined {
 
 export function parseBountyMoveObjectJson(bountyId: string, json: unknown): BountyView {
   if (!isRecord(json)) {
-    return { id: bountyId, creator: "", target: "", acceptedHunters: [] };
+    return { id: bountyId, creator: "", acceptedHunters: [] };
   }
 
   const creator =
@@ -69,10 +78,7 @@ export function parseBountyMoveObjectJson(bountyId: string, json: unknown): Boun
     toStringOrUndefined(json["creator_address"]) ||
     "";
 
-  const target =
-    toStringOrUndefined(json["target"]) ||
-    toStringOrUndefined(json["target_address"]) ||
-    "";
+  const target = parseCharacterId(json["target"]);
 
   const lifecycle =
     parseLifecycle(json["lifecycle"]) ||

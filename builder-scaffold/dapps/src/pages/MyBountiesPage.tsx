@@ -77,7 +77,9 @@ export function MyBountiesPage(props: {
               <Flex justify="between" align="center" gap="3">
                 <Box>
                   <Text size="2">BountyId: {b.id}</Text>
-                  <div>目标：{b.target}</div>
+                  <div>
+                    目标：{b.target ? `${b.target.tenant}:${b.target.itemId.toString()}` : "-"}
+                  </div>
                   <div>状态：{lifecycle || "-"}，接取人数：{accepted}</div>
                 </Box>
                 <button disabled={isCancelling || !canCancel} onClick={() => onCancel(b.id)}>

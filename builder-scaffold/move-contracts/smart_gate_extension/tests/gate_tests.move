@@ -26,14 +26,18 @@ fun hunter_b(): address {
     @0xABCD
 }
 
-fun target(): address {
-    @0xF00D
+fun target(): corpse_gate_bounty::CharacterId {
+    corpse_gate_bounty::character_id(900000001, b"dev".to_string())
+}
+
+fun other_target(): corpse_gate_bounty::CharacterId {
+    corpse_gate_bounty::character_id(900000002, b"dev".to_string())
 }
 
 /// 用于本地 Move 单测的“可信 attestor 地址”。
 /// 注意：只有当测试需要走到签名验证分支时，才需要配套提供与之匹配的 signature。
 fun trusted_attestor(): address {
-    @0x7573c697fa68450f04fa0dee2d39dcdc8a5ccf5db547f3e47638a6f8eeeec110
+    @0xa0ccc8bcc83f6c628340134f8546a21e0618fd1aaa02432bba454c4a2c2233da
 }
 
 /// 与 `trusted_attestor()` 配套的 Ed25519 personal message signature。
@@ -43,11 +47,11 @@ fun trusted_attestor(): address {
 /// - bounty_id = 0x11c79dd6...fbb
 /// - killmail_id = 42
 /// - killer = 0x...beef
-/// - victim = 0x...f00d
+/// - victim = CharacterId{ item_id=900000001, tenant="dev" }
 /// - kill_timestamp = 1
 /// - is_ship_loss = true
 const VALID_CLAIM_SIGNATURE: vector<u8> =
-    x"00f7ecbf706f421cf13a4cb6e518e9e5c733ab71c0292117b018dd5e5a22eeb2da399fb97c53cfa0dd69e469a6887268aded7abac525bf1338654497a138fe2d0379b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664";
+    x"00b5142420a4a4fefa90138b0dca8fcf9a1c2269c98be3570e5c6127bf70024dd6e1e67ba201a2b9b4697a752ebb704ed4256ca6af5f1dfdf7d9be739e2c7e880aea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
 
 fun init_claim_config(ctx: &mut TxContext): (config::ExtensionConfig, config::AdminCap) {
     let (mut extension_config, admin_cap) = config::new_for_testing(ctx);
@@ -488,7 +492,7 @@ fun test_claim_rejects_victim_mismatch() {
             &mut bounty,
             KILLMAIL_ID,
             hunter(),
-            hunter_b(),
+            other_target(),
             kill_timestamp,
             true,
             x"00", // signature not reached

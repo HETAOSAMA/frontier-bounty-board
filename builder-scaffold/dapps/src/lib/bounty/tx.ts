@@ -5,7 +5,8 @@ const CLOCK_OBJECT_ID = "0x6";
 export function buildCreateBountyTx(args: {
   builderPackageId: string;
   coinType: string;
-  target: string;
+  targetItemId: bigint;
+  targetTenant: string;
   expiresAt: bigint;
   escrowAmount: bigint;
 }): Transaction {
@@ -18,11 +19,16 @@ export function buildCreateBountyTx(args: {
     arguments: [escrowCoin],
   });
 
+  const [target] = tx.moveCall({
+    target: `${args.builderPackageId}::corpse_gate_bounty::character_id`,
+    arguments: [tx.pure.u64(args.targetItemId), tx.pure.string(args.targetTenant)],
+  });
+
   tx.moveCall({
     target: `${args.builderPackageId}::corpse_gate_bounty::create_bounty`,
     typeArguments: [args.coinType],
     arguments: [
-      tx.pure.address(args.target),
+      target,
       tx.pure.u64(args.expiresAt),
       escrowBalance,
       tx.object(CLOCK_OBJECT_ID),
@@ -80,12 +86,18 @@ export function buildClaimBountyTx(args: {
   payoutTo: string;
   killmailId: bigint;
   killer: string;
-  victim: string;
+  victimItemId: bigint;
+  victimTenant: string;
   killTimestampMs: bigint;
   isShipLoss: boolean;
   signatureBytes: number[];
 }): Transaction {
   const tx = new Transaction();
+
+  const [victim] = tx.moveCall({
+    target: `${args.builderPackageId}::corpse_gate_bounty::character_id`,
+    arguments: [tx.pure.u64(args.victimItemId), tx.pure.string(args.victimTenant)],
+  });
 
   const [payoutBalance] = tx.moveCall({
     target: `${args.builderPackageId}::corpse_gate_bounty::claim_bounty`,
@@ -95,7 +107,7 @@ export function buildClaimBountyTx(args: {
       tx.object(args.bountyId),
       tx.pure.u64(args.killmailId),
       tx.pure.address(args.killer),
-      tx.pure.address(args.victim),
+      victim,
       tx.pure.u64(args.killTimestampMs),
       tx.pure.bool(args.isShipLoss),
       tx.pure.vector("u8", args.signatureBytes),

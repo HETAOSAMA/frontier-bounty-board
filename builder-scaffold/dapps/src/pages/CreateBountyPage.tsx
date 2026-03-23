@@ -1,14 +1,9 @@
 import { Box, Flex, Heading, Text } from "@radix-ui/themes";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCurrentAccount, useDAppKit } from "@mysten/dapp-kit-react";
 import { buildCreateBountyTx } from "../lib/bounty/tx";
 import { formatMistToSui, parseSuiToMist } from "../lib/sui/amount";
-
-function parseSuiAddress(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith("0x")) return null;
-  return trimmed;
-}
+import { searchCharacters, type CharacterCandidate } from "../lib/attestor/client";
 
 function parseExpiresAtMs(mode: "never" | "custom", raw: string): { ok: true; value: bigint } | { ok: false; error: string } {
   if (mode === "never") return { ok: true, value: 0n };
@@ -28,7 +23,11 @@ export function CreateBountyPage(props: {
   const account = useCurrentAccount();
   const dAppKit = useDAppKit();
 
-  const [target, setTarget] = useState("");
+  const [targetName, setTargetName] = useState("");
+  const [nameOptions, setNameOptions] = useState<CharacterCandidate[]>([]);
+  const [nameLoading, setNameLoading] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [selectedCharacter, setSelectedCharacter] = useState<CharacterCandidate | null>(null);
   const [amount, setAmount] = useState("");
   const [expiryMode, setExpiryMode] = useState<"never" | "custom">("never");
   const [expiryValue, setExpiryValue] = useState("");
@@ -38,9 +37,45 @@ export function CreateBountyPage(props: {
   const [digest, setDigest] = useState<string | null>(null);
   const [createdBountyId, setCreatedBountyId] = useState<string | null>(null);
 
-  const normalizedTarget = useMemo(() => parseSuiAddress(target), [target]);
   const parsedAmount = useMemo(() => parseSuiToMist(amount), [amount]);
   const parsedExpiry = useMemo(() => parseExpiresAtMs(expiryMode, expiryValue), [expiryMode, expiryValue]);
+
+  useEffect(() => {
+    const q = targetName.trim();
+    setNameError(null);
+    setSelectedCharacter(null);
+    if (!q) {
+      setNameOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+    setNameLoading(true);
+    const handle = window.setTimeout(async () => {
+      const res = await searchCharacters({ name: q, limit: 10 });
+      if (cancelled) return;
+      if (!res.ok) {
+        setNameOptions([]);
+        setNameError(res.error);
+        setNameLoading(false);
+        return;
+      }
+      setNameOptions(res.value);
+      setNameLoading(false);
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [targetName]);
+
+  function onSelectCharacter(candidate: CharacterCandidate) {
+    setSelectedCharacter(candidate);
+    setTargetName(candidate.name);
+    setNameOptions([]);
+    setNameError(null);
+  }
 
   async function onSubmit() {
     setError(null);
@@ -51,8 +86,8 @@ export function CreateBountyPage(props: {
       setError("请先连接钱包");
       return;
     }
-    if (!normalizedTarget) {
-      setError("目标钱包地址不正确（需以 0x 开头）");
+    if (!selectedCharacter) {
+      setError("请选择目标角色");
       return;
     }
     if (!parsedAmount.ok) {
@@ -82,7 +117,8 @@ export function CreateBountyPage(props: {
       const tx = buildCreateBountyTx({
         builderPackageId: props.builderPackageId,
         coinType: props.coinType,
-        target: normalizedTarget,
+        targetItemId: BigInt(selectedCharacter.item_id),
+        targetTenant: selectedCharacter.tenant,
         expiresAt: parsedExpiry.value,
         escrowAmount: parsedAmount.value,
       });
@@ -103,8 +139,56 @@ export function CreateBountyPage(props: {
     <Box>
       <Heading size="4">发布赏金</Heading>
       <Box mt="3">
-        <Text as="label" size="2">目标钱包地址（Sui address）</Text>
-        <input style={{ width: "100%" }} value={target} onChange={(e) => setTarget(e.target.value)} placeholder="0x..." />
+        <Text as="label" size="2">目标角色名（搜索并选择）</Text>
+        <input
+          style={{ width: "100%" }}
+          value={targetName}
+          onChange={(e) => setTargetName(e.target.value)}
+          placeholder="输入角色名，自动查询"
+        />
+        <Box mt="2">
+          {nameLoading ? <Text size="1">查询中...</Text> : null}
+          {nameError ? (
+            <Box mt="1" style={{ color: "crimson" }}>
+              <Text size="1">{nameError}</Text>
+            </Box>
+          ) : null}
+          {!nameLoading && targetName.trim() && nameOptions.length === 0 && !nameError ? (
+            <Text size="1">无匹配结果</Text>
+          ) : null}
+          {nameOptions.length > 0 ? (
+            <Box mt="2" style={{ border: "1px solid #e2e2e2", borderRadius: 8 }}>
+              {nameOptions.map((c) => (
+                <Box
+                  key={`${c.tenant}:${c.item_id}`}
+                  p="2"
+                  style={{ cursor: "pointer", borderBottom: "1px solid #eee" }}
+                  onClick={() => onSelectCharacter(c)}
+                >
+                  <div>
+                    <Text size="2">{c.name}</Text>
+                  </div>
+                  <div>
+                    <Text size="1">tenant: {c.tenant}</Text>
+                  </div>
+                  <div>
+                    <Text size="1">item_id: {c.item_id}</Text>
+                  </div>
+                  <div>
+                    <Text size="1">wallet: {c.character_wallet}</Text>
+                  </div>
+                </Box>
+              ))}
+            </Box>
+          ) : null}
+          {selectedCharacter ? (
+            <Box mt="2">
+              <Text size="1">
+                已选择：{selectedCharacter.name} (tenant={selectedCharacter.tenant}, item_id={selectedCharacter.item_id})
+              </Text>
+            </Box>
+          ) : null}
+        </Box>
       </Box>
       <Box mt="3">
         <Text as="label" size="2">金额（SUI）</Text>

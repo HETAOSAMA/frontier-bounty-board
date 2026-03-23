@@ -84,7 +84,10 @@ export function BountiesPage(props: {
               <Flex justify="between" align="center" gap="3">
                 <Box>
                   <Text size="2">BountyId: {view.id}</Text>
-                  <div>目标：{view.target}</div>
+                  <div>
+                    目标：
+                    {view.target ? `${view.target.tenant}:${view.target.itemId.toString()}` : "-"}
+                  </div>
                   <div>金额：{view.escrowAmount ? `${formatMistToSui(view.escrowAmount)} SUI` : "-"}</div>
                   <div>状态：{lifecycle || "-"}，接取人数：{acceptedCount}</div>
                 </Box>

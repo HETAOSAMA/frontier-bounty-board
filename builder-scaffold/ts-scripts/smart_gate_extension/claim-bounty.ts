@@ -31,7 +31,8 @@ type ClaimEnvInput = {
     coinType: string;
     killmailId: bigint;
     killerAddress: string;
-    victimAddress: string;
+    victimItemId: bigint;
+    victimTenant: string;
     killTimestampMs: bigint;
     isShipLoss: boolean;
     claimSignatureBytes: number[];
@@ -52,7 +53,8 @@ function readClaimEnvInput(): ClaimEnvInput {
         coinType: requireBountyCoinTypeFromEnv(),
         killmailId: requirePositiveU64Env("KILLMAIL_ID"),
         killerAddress: requireAddressEnv("KILLER_ADDRESS"),
-        victimAddress: requireAddressEnv("VICTIM_ADDRESS"),
+        victimItemId: requirePositiveU64Env("VICTIM_ITEM_ID"),
+        victimTenant: (process.env.VICTIM_TENANT || process.env.TENANT || "dev").trim() || "dev",
         killTimestampMs: requirePositiveU64Env("KILL_TIMESTAMP_MS"),
         isShipLoss: (process.env.IS_SHIP_LOSS || "true").trim().toLowerCase() === "true",
         claimSignatureBytes: requireSignatureBytes("CLAIM_SIGNATURE_HEX"),
@@ -69,6 +71,11 @@ function buildClaimBountyTx(
     const tx = new Transaction();
     tx.setSender(hunterAddress);
 
+    const [victim] = tx.moveCall({
+        target: `${builderPackageId}::${MODULE.CORPSE_GATE_BOUNTY}::character_id`,
+        arguments: [tx.pure.u64(input.victimItemId), tx.pure.string(input.victimTenant)],
+    });
+
     const [payoutBalance] = tx.moveCall({
         target: `${builderPackageId}::${MODULE.CORPSE_GATE_BOUNTY}::claim_bounty`,
         typeArguments: [input.coinType],
@@ -77,7 +84,7 @@ function buildClaimBountyTx(
             tx.object(input.bountyId),
             tx.pure.u64(input.killmailId),
             tx.pure.address(input.killerAddress),
-            tx.pure.address(input.victimAddress),
+            victim,
             tx.pure.u64(input.killTimestampMs),
             tx.pure.bool(input.isShipLoss),
             tx.pure.vector("u8", input.claimSignatureBytes),
