@@ -29,20 +29,62 @@
 - `.env`：给脚本/attestor 使用（publish 后会自动更新 packageId 等）
 - `dapps/.env`：给前端使用（VITE_* 变量，改完需重启 dev server）
 
-### 0.1 环境变量总览（写到哪里？）
+### 0.1 环境变量（重新整理：尽量复用、最小集合）
 
-| 变量 | 写入位置 | 谁使用 | 从哪里获取 |
+本仓库只维护两份环境变量文件：
+
+- `builder-scaffold/.env`：给 **TS 脚本 / attestor** 用（`dotenv/config` 会自动加载）
+- `builder-scaffold/dapps/.env`：给 **前端** 用（必须是 `VITE_*` 前缀；改完要重启 `dev`）
+
+> 重要：`WORLD_PACKAGE_ID` 请使用 **original-id（类型稳定 ID）**。
+> `world-contracts/contracts/world/Published.toml` 里会同时出现 `published-at`（升级后的新 package id）和 `original-id`。
+> 我们在拼 `MoveEventType`（例如 `...::killmail::KillmailCreatedEvent`）时需要的是 **original-id**。
+
+#### A) 所有组件共用（建议只记这一组）
+
+| 变量 | 写到哪里 | 用途 | 从哪里获取 |
 |---|---|---|---|
-| `SUI_NETWORK` / `SUI_RPC_URL` | `.env` | TS 脚本、attestor | localnet 用 `http://127.0.0.1:9000`；testnet 用 `https://fullnode.testnet.sui.io:443` |
-| `WORLD_PACKAGE_ID` | `.env` + `dapps/.env` | attestor / 前端 | localnet：`efctl env up` 输出表格或 `deployments/<network>/extracted-object-ids.json`；testnet(Utopia)：`0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75` |
-| `WORLD_OBJECT_REGISTRY_ID` | `.env` | attestor、mock-killmail | 同上（Object Registry） |
-| `TENANT` | `.env` | attestor、mock-killmail | localnet 默认 `dev`；线上从官方世界配置获取 |
-| `BUILDER_PACKAGE_ID` | `.env` + `dapps/.env` | 脚本、前端 | `efctl env extension publish ...` 输出；或 `sui client publish` 输出 |
-| `EXTENSION_CONFIG_ID` | `.env` + `dapps/.env` | 脚本、前端 | 同上（publish 输出里会列出共享 `ExtensionConfig` object id） |
-| `ATTESTOR_PRIVATE_KEY` | 服务器环境变量（或本机 `.env`） | attestor | 你自己生成/保管（不要放前端、不要提交 git） |
-| `VITE_ATTESTOR_URL` | `dapps/.env` | 前端 | 你部署的 attestor URL（localnet 用 `http://127.0.0.1:8787`） |
-| `VITE_SUI_GRAPHQL_ENDPOINT` | `dapps/.env` | 前端 | localnet 用 `http://127.0.0.1:9125/graphql`（efctl 提供）；testnet 用 `https://graphql.testnet.sui.io/graphql` |
-| `BOUNTY_ID` | `.env`（可选） | 脚本 | 运行 `npm run create-bounty` 后的 `BountyCreatedEvent.bounty_id` |
+| `NETWORK`（推荐）/ `SUI_NETWORK`（兼容） | `.env` | 选择网络：`localnet/testnet/devnet/mainnet` | 你自己填 |
+| `SUI_RPC_URL`（可选） | `.env` | 覆盖 RPC（不填会按网络默认） | localnet：`http://127.0.0.1:9000`；testnet：`https://fullnode.testnet.sui.io:443` |
+| `TENANT` | `.env` | 世界租户（用于筛选 killmail / 解析 TenantItemId） | localnet 默认 `dev`；Utopia：`utopia`（官方提供） |
+| `WORLD_PACKAGE_ID` | `.env` + `dapps/.env` | World 合约类型前缀（用于 MoveEventType / 派生对象类型） | `Published.toml` 的 **original-id**；Utopia(testnet)：`0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75` |
+| `WORLD_OBJECT_REGISTRY_ID` | `.env` | 派生 Character/Killmail 等对象 ID 的根（attestor 校验用） | localnet：`efctl env up` 输出或 `deployments/localnet/extracted-object-ids.json`；testnet：用 GraphQL 按类型查询（见下） |
+
+#### B) 你的赏金合约（extension）相关
+
+| 变量 | 写到哪里 | 用途 | 从哪里获取 |
+|---|---|---|---|
+| `BUILDER_PACKAGE_ID` | `.env` + `dapps/.env` | 赏金合约 package id（`corpse_gate_bounty` 所在包） | `sui client publish` 输出里的 `PackageID` |
+| `EXTENSION_CONFIG_ID` | `.env` + `dapps/.env` | 共享对象 `ExtensionConfig`（存 trusted_attestor 等规则） | `sui client publish` 输出里的 `ExtensionConfig` object id |
+| `ADMIN_CAP_ID`（可选但推荐） | `.env` | `configure-rules` 用的 `AdminCap` object id（避免脚本搜索 owned objects） | `sui client publish` 输出里的 `AdminCap` object id |
+| `BOUNTY_COIN_TYPE`（脚本用） | `.env` | TS 脚本创建/接取/领取时的 coin type | 一般为 `0x2::sui::SUI` |
+
+#### C) 私钥（只给本机脚本/服务端；不要进前端、不要提交 git）
+
+| 变量 | 写到哪里 | 用途 | 从哪里获取 |
+|---|---|---|---|
+| `ADMIN_PRIVATE_KEY` | `.env` | TS 脚本/配置规则的签名者（应为发布合约并持有 AdminCap 的地址） | `sui keytool export --key-identity 0x<address>` |
+| `ATTESTOR_PRIVATE_KEY` | `.env` 或服务端环境变量 | attestor 对 claim payload 签名；同时 `configure-rules` 会用它派生 trusted_attestor 地址 | 你自己生成/保存（`suiprivkey...`） |
+| `PLAYER_A_PRIVATE_KEY`（可选） | `.env` | 仅用于本地脚本模拟“猎人地址”接取/领取 | 可用你自己的测试地址导出 |
+
+#### D) attestor 服务监听（可选）
+
+| 变量 | 写到哪里 | 用途 | 默认值 |
+|---|---|---|---|
+| `ATTESTOR_KEY_ID` | `.env` | /health 返回的 key 标识 | `local-dev-key-1` |
+| `ATTESTOR_HOST` | `.env` | 监听地址 | `127.0.0.1` |
+| `ATTESTOR_PORT` 或 `PORT` | `.env` | 监听端口 | `8787` |
+
+#### E) 前端（只用 VITE_*，尽量与 `.env` 同名一一对应）
+
+| 变量 | 写到哪里 | 用途 | 从哪里获取 |
+|---|---|---|---|
+| `VITE_BUILDER_PACKAGE_ID` | `dapps/.env` | 同 `BUILDER_PACKAGE_ID` | 同上 |
+| `VITE_EXTENSION_CONFIG_ID` | `dapps/.env` | 同 `EXTENSION_CONFIG_ID` | 同上 |
+| `VITE_BOUNTY_COIN_TYPE` | `dapps/.env` | coin type（一般 `0x2::sui::SUI`） | 你自己填 |
+| `VITE_EVE_WORLD_PACKAGE_ID` | `dapps/.env` | 同 `WORLD_PACKAGE_ID`（original-id） | 同上 |
+| `VITE_ATTESTOR_URL` | `dapps/.env` | 前端调用 attestor 的 base URL | 本机：`http://127.0.0.1:8787` |
+| `VITE_SUI_GRAPHQL_ENDPOINT` | `dapps/.env` | Sui GraphQL endpoint | testnet：`https://graphql.testnet.sui.io/graphql` |
 
 ---
 
@@ -248,8 +290,27 @@ SUI_RPC_URL=https://fullnode.testnet.sui.io:443 NETWORK=testnet pnpm run configu
 > `WORLD_PACKAGE_ID` / `WORLD_OBJECT_REGISTRY_ID` / `TENANT` 这三项来自“游戏世界”的公开配置（官方提供）。
 > 只要它们指向 Utopia（testnet）世界，attestor 就能直接读取游戏内产生的 `KillmailCreatedEvent`。
 
-> Utopia(testnet) 的 `WORLD_PACKAGE_ID`（官方 world-contracts 发布记录）为：
+> Utopia(testnet) 的 `WORLD_PACKAGE_ID`（使用 **original-id**）为：
 > `0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75`
+>
+> 备注：`Published.toml` 里 `published-at` 可能会随着 world 升级变成新的 package id（例如 `0x07e6...`），
+> 但我们的 `WORLD_PACKAGE_ID` 仍应填 `original-id`。
+
+### 2.2.1 如何获取 WORLD_OBJECT_REGISTRY_ID（Utopia/testnet）
+
+用 Sui GraphQL 按类型查询 `ObjectRegistry`（返回的 `address` 就是 `WORLD_OBJECT_REGISTRY_ID`）：
+
+```bash
+curl -sS https://graphql.testnet.sui.io/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"query { objects(filter: { type: \"0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75::object_registry::ObjectRegistry\" }, first: 1) { nodes { address } } }"}'
+```
+
+Utopia(testnet) 当前值：
+
+```env
+WORLD_OBJECT_REGISTRY_ID=0xc2b969a72046c47e24991d69472afb2216af9e91caf802684514f39706d7dc57
+```
 
 ### 2.3 部署前端（静态站）
 

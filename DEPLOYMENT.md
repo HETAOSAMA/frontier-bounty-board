@@ -31,10 +31,14 @@
 
 ### 0.1 环境变量总览（写到哪里？）
 
+> 重要：`WORLD_PACKAGE_ID` 请使用 **original-id（类型稳定 ID）**。
+> `world-contracts/contracts/world/Published.toml` 里同时会出现 `published-at`（升级后的新 package id）和 `original-id`。
+> 我们的 attestor/前端在拼 `MoveEventType`（例如 `...::killmail::KillmailCreatedEvent`）时需要的是 **original-id**。
+
 | 变量 | 写入位置 | 谁使用 | 从哪里获取 |
 |---|---|---|---|
 | `SUI_NETWORK` / `SUI_RPC_URL` | `builder-scaffold/.env` | TS 脚本、attestor | localnet 用 `http://127.0.0.1:9000`；testnet 用 `https://fullnode.testnet.sui.io:443` |
-| `WORLD_PACKAGE_ID` | `builder-scaffold/.env` + `dapps/.env` | attestor / 前端 | `efctl env up` 输出表格；或 `builder-scaffold/deployments/<network>/extracted-object-ids.json` |
+| `WORLD_PACKAGE_ID` | `builder-scaffold/.env` + `dapps/.env` | attestor / 前端 | `efctl env up` 输出表格；或 `builder-scaffold/deployments/<network>/extracted-object-ids.json`；testnet(Utopia original-id)：`0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75` |
 | `WORLD_OBJECT_REGISTRY_ID` | `builder-scaffold/.env` | attestor、mock-killmail | 同上（Object Registry） |
 | `TENANT` | `builder-scaffold/.env` | attestor、mock-killmail | localnet 默认 `dev`；线上从官方世界配置获取 |
 | `BUILDER_PACKAGE_ID` | `builder-scaffold/.env` + `dapps/.env` | 脚本、前端 | `efctl env extension publish ...` 输出；或 `sui client publish` 输出 |

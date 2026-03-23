@@ -51,9 +51,15 @@ VITE_SUI_GRAPHQL_ENDPOINT=...
 |---|---|---|
 | `VITE_BUILDER_PACKAGE_ID` | `dapps/.env` | 发布赏金合约 `smart_gate_extension` 后输出的 package id（localnet 用 `efctl env extension publish ...`，testnet 用 `sui client publish` 或 efctl publish） |
 | `VITE_EXTENSION_CONFIG_ID` | `dapps/.env` | 同上（publish 输出里会列出共享 `ExtensionConfig` object id） |
-| `VITE_EVE_WORLD_PACKAGE_ID` | `dapps/.env` | 世界合约 package id：localnet 从 `efctl env up` 输出表格/`deployments/localnet/extracted-object-ids.json`；线上从官方世界配置获取 |
+| `VITE_EVE_WORLD_PACKAGE_ID` | `dapps/.env` | 世界合约 package id（填 **original-id**）：localnet 从 `efctl env up` 输出表格/`deployments/localnet/extracted-object-ids.json`；线上从官方世界配置获取（参考 `world-contracts/contracts/world/Published.toml` 的 `original-id`） |
 | `VITE_ATTESTOR_URL` | `dapps/.env` | attestor 服务地址：本机联调 `http://127.0.0.1:8787`；上线后填公网域名 |
 | `VITE_SUI_GRAPHQL_ENDPOINT` | `dapps/.env` | localnet：`http://127.0.0.1:9125/graphql`（efctl 提供）；testnet：`https://graphql.testnet.sui.io/graphql` |
+
+### 推荐：从模板复制
+
+```bash
+cp .env.example .env
+```
 
 ### 配置示例：localnet（efctl）
 
@@ -70,7 +76,7 @@ VITE_ATTESTOR_URL=http://127.0.0.1:8787
 ### 配置示例：testnet（Utopia 等世界）
 
 ```env
-VITE_EVE_WORLD_PACKAGE_ID="0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75"  # testnet_utopia
+VITE_EVE_WORLD_PACKAGE_ID="0xd12a70c74c1e759445d6f209b01d43d860e97fcf2ef72ccbbd00afd828043f75"  # testnet_utopia original-id
 VITE_SUI_GRAPHQL_ENDPOINT="https://graphql.testnet.sui.io/graphql"
 
 VITE_BUILDER_PACKAGE_ID=0x<你发布 smart_gate_extension 的 package id>

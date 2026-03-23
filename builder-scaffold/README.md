@@ -64,6 +64,8 @@ npm --prefix dapps run dev
 上线同样按 `./DEPLOYMENT.md` 的第 2 章执行。关键点：
 
 - `WORLD_PACKAGE_ID / WORLD_OBJECT_REGISTRY_ID / TENANT` 来自官方世界配置（Utopia 在 testnet 时，attestor 可直接读取游戏内 killmail）
+
+  > 注意：`WORLD_PACKAGE_ID` 请使用 `world-contracts/contracts/world/Published.toml` 的 **original-id**（类型稳定 ID），不要用 `published-at`。
 - `BUILDER_PACKAGE_ID / EXTENSION_CONFIG_ID` 来自你发布 `smart_gate_extension` 的输出
 - `ATTESTOR_PRIVATE_KEY` 只放服务端，不进入前端/不提交 git
 

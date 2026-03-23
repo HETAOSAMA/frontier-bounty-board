@@ -19,4 +19,13 @@ TENANT=utopia \
 pnpm attestor
 ```
 
+推荐做法：复制 `builder-scaffold/.env.example` 为 `.env`，把上面变量写进去，然后直接执行：
+
+```bash
+pnpm run attestor
+```
+
+> `WORLD_PACKAGE_ID` 请使用 `world-contracts/contracts/world/Published.toml` 的 **original-id**（类型稳定 ID），
+> 不要用 `published-at`。
+
 前端通过 `VITE_ATTESTOR_URL` 访问该服务。
