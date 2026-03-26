@@ -107,8 +107,3 @@ npm run dev
 ```
 
 ---
-
-## Hackathon 展示建议
-
-- 用 `npm run mock-killmail` 在 localnet 生成 KillmailCreatedEvent，避免必须同时开两个游戏客户端。
-- 用脚本或前端快速完成一条完整链路：发布 → 接取 → 击杀 → 领取。
