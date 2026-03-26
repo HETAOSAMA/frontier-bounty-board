@@ -89,6 +89,11 @@ export function MyHuntsPage(props: {
 
       <Box mt="3">
         {(bountiesQuery.data ?? []).map((b) => (
+          (() => {
+            const lifecycle = b.lifecycle ?? "";
+            const isClaimed = lifecycle === "Claimed";
+            const label = isClaimed ? "已领取" : isClaiming ? "领取中..." : "领取";
+            return (
           <Box key={b.id} p="3" mb="2" style={{ border: "1px solid #e2e2e2", borderRadius: 8 }}>
             <Flex justify="between" align="center" gap="3">
                 <Box>
@@ -98,11 +103,13 @@ export function MyHuntsPage(props: {
                 </div>
                   <div>状态：{b.lifecycle ?? "-"}</div>
                 </Box>
-              <button disabled={isClaiming} onClick={() => onClaim(b.id)}>
-                {isClaiming ? "领取中..." : "领取"}
+              <button disabled={isClaimed || isClaiming} onClick={() => onClaim(b.id)}>
+                {label}
               </button>
             </Flex>
           </Box>
+            );
+          })()
         ))}
       </Box>
     </Box>

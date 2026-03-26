@@ -150,6 +150,18 @@ async function main() {
     const victimWalletFilter = process.env.VICTIM_WALLET
         ? normalizeHexId(process.env.VICTIM_WALLET)
         : null;
+    const killerCharacterFilter =
+        process.env.KILLER_CHARACTER_ID && /^\d+$/.test(process.env.KILLER_CHARACTER_ID.trim())
+            ? BigInt(process.env.KILLER_CHARACTER_ID.trim())
+            : null;
+    const victimCharacterFilter =
+        process.env.VICTIM_CHARACTER_ID && /^\d+$/.test(process.env.VICTIM_CHARACTER_ID.trim())
+            ? BigInt(process.env.VICTIM_CHARACTER_ID.trim())
+            : null;
+    const killmailItemFilter =
+        process.env.KILLMAIL_ITEM_ID && /^\d+$/.test(process.env.KILLMAIL_ITEM_ID.trim())
+            ? BigInt(process.env.KILLMAIL_ITEM_ID.trim())
+            : null;
     const limit = Number.parseInt((process.env.LIMIT || "10").trim(), 10);
     const maxEventsScanned = Number.parseInt((process.env.MAX_SCAN || "300").trim(), 10);
 
@@ -165,6 +177,11 @@ async function main() {
     console.log("Event type:", moveEventType);
     if (killerWalletFilter) console.log("Filter killer wallet:", killerWalletFilter);
     if (victimWalletFilter) console.log("Filter victim wallet:", victimWalletFilter);
+    if (killerCharacterFilter)
+        console.log("Filter killer character_id:", killerCharacterFilter.toString());
+    if (victimCharacterFilter)
+        console.log("Filter victim character_id:", victimCharacterFilter.toString());
+    if (killmailItemFilter) console.log("Filter killmail item_id:", killmailItemFilter.toString());
     console.log("");
 
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
@@ -199,6 +216,10 @@ async function main() {
 
             const killerId = parseTenantItemId("killer_id", json.killer_id);
             const victimId = parseTenantItemId("victim_id", json.victim_id);
+
+            if (killmailItemFilter && key.itemId !== killmailItemFilter) continue;
+            if (killerCharacterFilter && killerId.itemId !== killerCharacterFilter) continue;
+            if (victimCharacterFilter && victimId.itemId !== victimCharacterFilter) continue;
             const killTimestampSec = parseU64Like("kill_timestamp", json.kill_timestamp);
             const isShipLoss = parseIsShipLoss(json.loss_type);
 

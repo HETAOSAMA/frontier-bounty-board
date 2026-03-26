@@ -76,6 +76,8 @@ const DEFAULT_KEY_ID = "local-dev-key-1";
 const DEFAULT_TENANT = "dev";
 const DEFAULT_CANDIDATE_LIMIT = 50;
 const MAX_CANDIDATE_LIMIT = 200;
+const DEFAULT_CANDIDATE_MAX_SCAN = 500;
+const MAX_CANDIDATE_MAX_SCAN = 5000;
 const MILLIS_THRESHOLD = 1_000_000_000_000n;
 const EVENT_QUERY_PAGE_SIZE = 100;
 const VALID_NETWORKS = new Set<Network>(["localnet", "testnet", "devnet", "mainnet"]);
@@ -156,6 +158,9 @@ function main(): void {
                 worldConfig,
             });
         } catch (error) {
+            if (response.headersSent || response.writableEnded) {
+                return;
+            }
             const statusCode = error instanceof HttpError ? error.statusCode : 500;
             const message = error instanceof Error ? error.message : "Internal server error";
             writeJson(response, statusCode, { error: message });
@@ -850,90 +855,88 @@ async function listClaimableKillmailCandidates(input: {
         };
     }>
 > {
-    const recentEvents: KillmailCreatedEventState[] = [];
+    const maxScan = resolveCandidateMaxScan();
+    const out: Array<{
+        killmail_id: string;
+        killer: string;
+        victim: { item_id: string; tenant: string };
+        kill_timestamp_ms: string;
+        attestation: {
+            key_id: string;
+            payload: Record<string, string>;
+            signature: string;
+        };
+    }> = [];
 
+    let scanned = 0;
     for await (const event of queryKillmailCreatedEvents(input.client, input.worldConfig)) {
-        recentEvents.push(event);
-        if (recentEvents.length >= input.limit) {
+        scanned += 1;
+        if (scanned > maxScan) {
+            break;
+        }
+
+        if (event.killTimestampMs <= input.bounty.createdAt) {
+            break;
+        }
+
+        if (input.bounty.expiresAt !== 0n && event.killTimestampMs > input.bounty.expiresAt) {
+            continue;
+        }
+        if (!event.isShipLoss) {
+            continue;
+        }
+
+        const victim = toCharacterId(event.victimId);
+        if (!characterIdEquals(victim, input.bounty.target)) {
+            continue;
+        }
+
+        const killer = await resolveAcceptedHunterWalletForKillerId({
+            client: input.client,
+            acceptedHunters: input.bounty.acceptedHunters,
+            killerId: event.killerId,
+            worldConfig: input.worldConfig,
+        });
+        if (!killer) {
+            continue;
+        }
+
+        const payload: ClaimAttestationPayload = {
+            bounty_id: input.bountyId,
+            killmail_id: event.killmailId,
+            killer,
+            victim,
+            kill_timestamp: event.killTimestampMs,
+            is_ship_loss: event.isShipLoss,
+        };
+
+        out.push({
+            killmail_id: event.killmailId.toString(),
+            killer,
+            victim: { item_id: victim.item_id.toString(), tenant: victim.tenant },
+            kill_timestamp_ms: event.killTimestampMs.toString(),
+            attestation: {
+                key_id: input.keyId,
+                payload: toResponsePayload(payload),
+                signature: await signClaimPayload(payload, input.keypair),
+            },
+        });
+
+        if (out.length >= input.limit) {
             break;
         }
     }
 
-    const candidates = await Promise.all(
-        recentEvents.map(async (event) => {
-            const victim = toCharacterId(event.victimId);
-            if (!characterIdEquals(victim, input.bounty.target)) {
-                return null;
-            }
-
-            const killer = await resolveAcceptedHunterWalletForKillerId({
-                client: input.client,
-                acceptedHunters: input.bounty.acceptedHunters,
-                killerId: event.killerId,
-                worldConfig: input.worldConfig,
-            });
-            if (!killer) {
-                return null;
-            }
-            if (event.killTimestampMs <= input.bounty.createdAt) {
-                return null;
-            }
-            if (input.bounty.expiresAt !== 0n && event.killTimestampMs > input.bounty.expiresAt) {
-                return null;
-            }
-            if (!event.isShipLoss) {
-                return null;
-            }
-
-            const payload: ClaimAttestationPayload = {
-                bounty_id: input.bountyId,
-                killmail_id: event.killmailId,
-                killer,
-                victim,
-                kill_timestamp: event.killTimestampMs,
-                is_ship_loss: event.isShipLoss,
-            };
-
-            return {
-                killmail_id: event.killmailId.toString(),
-                killer,
-                victim,
-                kill_timestamp_ms: event.killTimestampMs.toString(),
-                attestation: {
-                    key_id: input.keyId,
-                    payload: toResponsePayload(payload),
-                    signature: await signClaimPayload(payload, input.keypair),
-                },
-            };
-        })
-    );
-
-    return candidates
-        .filter(
-            (
-                candidate
-            ): candidate is {
-                killmail_id: string;
-                killer: string;
-                victim: string;
-                kill_timestamp_ms: string;
-                attestation: {
-                    key_id: string;
-                    payload: Record<string, string>;
-                    signature: string;
-                };
-            } => candidate !== null
-        )
-        .sort((left, right) => {
-            const timestampOrder = compareNumericStrings(
-                left.kill_timestamp_ms,
-                right.kill_timestamp_ms
-            );
-            if (timestampOrder !== 0) {
-                return timestampOrder;
-            }
-            return compareNumericStrings(left.killmail_id, right.killmail_id);
-        });
+    return out.sort((left, right) => {
+        const timestampOrder = compareNumericStrings(
+            left.kill_timestamp_ms,
+            right.kill_timestamp_ms
+        );
+        if (timestampOrder !== 0) {
+            return timestampOrder;
+        }
+        return compareNumericStrings(left.killmail_id, right.killmail_id);
+    });
 }
 
 function requireQueryParameter(url: URL, name: string): string {
@@ -958,6 +961,21 @@ function parseCandidateLimit(value: string | null): number {
         throw new HttpError(400, `limit must be an integer between 1 and ${MAX_CANDIDATE_LIMIT}`);
     }
 
+    return parsed;
+}
+
+function resolveCandidateMaxScan(): number {
+    const raw = (process.env.CANDIDATE_MAX_SCAN || String(DEFAULT_CANDIDATE_MAX_SCAN)).trim();
+    if (!/^\d+$/.test(raw)) {
+        throw new HttpError(500, "CANDIDATE_MAX_SCAN must be a positive integer");
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_CANDIDATE_MAX_SCAN) {
+        throw new HttpError(
+            500,
+            `CANDIDATE_MAX_SCAN must be an integer between 1 and ${MAX_CANDIDATE_MAX_SCAN}`
+        );
+    }
     return parsed;
 }
 
@@ -1157,6 +1175,9 @@ function writeJson(
     statusCode: number,
     body: Record<string, JsonValue>
 ): void {
+    if (response.headersSent || response.writableEnded) {
+        return;
+    }
     response.writeHead(statusCode, {
         "content-type": "application/json; charset=utf-8",
         "access-control-allow-origin": "*",
@@ -1167,6 +1188,9 @@ function writeJson(
 }
 
 function writeEmpty(response: ServerResponse, statusCode: number): void {
+    if (response.headersSent || response.writableEnded) {
+        return;
+    }
     response.writeHead(statusCode, {
         "access-control-allow-origin": "*",
         "access-control-allow-methods": "GET,POST,OPTIONS",

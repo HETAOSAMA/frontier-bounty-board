@@ -71,8 +71,7 @@ export function BountiesPage(props: {
           const canAccept =
             !!account?.address &&
             lifecycle === "Open" &&
-            !alreadyAccepted &&
-            !isCreator;
+            !alreadyAccepted;
           const canCancel = isCreator && lifecycle === "Open" && acceptedCount === 0;
           return (
             <Box
